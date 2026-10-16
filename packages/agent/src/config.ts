@@ -1,8 +1,9 @@
-// Agent configuration: %ProgramData%\zdeploy\agent.json, one per PC.
+// Agent configuration: %ProgramData%\zeploy\agent.json, one per PC.
 
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { migrateLegacyDir } from "../../core/src/index.ts";
 import { DEFAULT_PORT } from "../../protocol/src/index.ts";
 
 export interface AgentConfig {
@@ -12,10 +13,12 @@ export interface AgentConfig {
 }
 
 export function configPath(): string {
-  return (
-    process.env["ZDEPLOY_AGENT_CONFIG"] ??
-    join(process.env["ProgramData"] ?? "C:\\ProgramData", "zdeploy", "agent.json")
-  );
+  const custom = process.env["ZEPLOY_AGENT_CONFIG"];
+  if (custom) return custom;
+  const programData = process.env["ProgramData"] ?? "C:\\ProgramData";
+  // Keeps the PC id of an agent installed as "zdeploy", so it stays one row.
+  migrateLegacyDir(join(programData, "zdeploy"), join(programData, "zeploy"));
+  return join(programData, "zeploy", "agent.json");
 }
 
 export async function loadConfig(): Promise<AgentConfig> {

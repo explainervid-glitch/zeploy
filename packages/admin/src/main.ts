@@ -7,12 +7,14 @@
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { join } from "node:path";
+import { migrateLegacyDir } from "../../core/src/index.ts";
 import { DEFAULT_PORT } from "../../protocol/src/index.ts";
 import { startServer, type RunningServer } from "../../server/src/server.ts";
 
-// %APPDATA%\zdeploy-admin, the same folder `npm run server` uses, so both
+// %APPDATA%\zeploy-admin, the same folder `npm run server` uses, so both
 // ways of running the admin see the same packages and PCs.
-app.setPath("userData", join(app.getPath("appData"), "zdeploy-admin"));
+migrateLegacyDir(join(app.getPath("appData"), "zdeploy-admin"), join(app.getPath("appData"), "zeploy-admin"));
+app.setPath("userData", join(app.getPath("appData"), "zeploy-admin"));
 
 let server: RunningServer | null = null;
 let win: BrowserWindow | null = null;
@@ -28,21 +30,21 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
-  const port = Number(process.env["ZDEPLOY_PORT"] ?? DEFAULT_PORT);
+  const port = Number(process.env["ZEPLOY_PORT"] ?? DEFAULT_PORT);
   try {
     server = await startServer({
-      dataDir: process.env["ZDEPLOY_ADMIN_DATA"] ?? app.getPath("userData"),
+      dataDir: process.env["ZEPLOY_ADMIN_DATA"] ?? app.getPath("userData"),
       port,
-      host: process.env["ZDEPLOY_ADMIN_HOST"],
+      host: process.env["ZEPLOY_ADMIN_HOST"],
       uiDir: join(__dirname, "ui"),
       // Bundled by scripts/build.mjs for the one-click installer.
-      agentExe: join(__dirname, "agent", "zdeploy-agent.exe"),
+      agentExe: join(__dirname, "agent", "zeploy-agent.exe"),
     });
   } catch (err) {
     dialog.showErrorBox(
-      "zdeploy",
+      "zeploy",
       `The admin server could not start: ${(err as Error).message}\n\n` +
-        `Port ${port} may be in use, for example by another zdeploy admin that is still running.`,
+        `Port ${port} may be in use, for example by another zeploy admin that is still running.`,
     );
     app.quit();
     return;
@@ -63,9 +65,9 @@ async function boot(): Promise<void> {
     height: 820,
     minWidth: 820,
     minHeight: 560,
-    title: "zdeploy",
+    title: "zeploy",
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1c1d21" : "#e9eaed",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#131417" : "#FFFFFF",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,

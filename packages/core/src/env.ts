@@ -5,6 +5,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { migrateLegacyDir } from "./fsutil.ts";
 import { isElevated } from "./win.ts";
 
 export interface WindowsPaths {
@@ -50,7 +51,7 @@ export interface Environment {
   // Adobe's UnifiedPluginInstallerAgent.exe, when Creative Cloud is installed.
   upia: string | null;
   cep: { system: string; user: string };
-  // zdeploy's own state: receipts and staging.
+  // zeploy's own state: receipts and staging.
   home: string;
 }
 
@@ -69,7 +70,7 @@ export const APP_PROCESSES: Record<AppId, string> = {
 };
 
 // Host codes used in CSXS/manifest.xml, mapped to the process that loads the
-// panel. Only the hosts zdeploy targets are named; others are ignored.
+// panel. Only the hosts zeploy targets are named; others are ignored.
 export const CEP_HOSTS: Record<string, AdobeAppId> = {
   AEFT: "aftereffects",
   PPRO: "premiere",
@@ -99,7 +100,7 @@ export function defaultPaths(env: NodeJS.ProcessEnv = process.env): WindowsPaths
 export interface DetectOptions {
   paths?: Partial<WindowsPaths>;
   isAdmin?: boolean;
-  // Extra blender.exe paths. Also read from ZDEPLOY_BLENDER, separated by ";".
+  // Extra blender.exe paths. Also read from ZEPLOY_BLENDER, separated by ";".
   blenderExes?: string[];
   home?: string;
 }
@@ -108,7 +109,7 @@ export async function detectEnvironment(options: DetectOptions = {}): Promise<En
   const paths = { ...defaultPaths(), ...options.paths };
   const extraBlender = [
     ...(options.blenderExes ?? []),
-    ...(process.env["ZDEPLOY_BLENDER"] ?? "").split(";").filter(Boolean),
+    ...(process.env["ZEPLOY_BLENDER"] ?? "").split(";").filter(Boolean),
   ];
 
   const [isAdmin, adobe, blender, animateConfigs, upia] = await Promise.all([
@@ -118,6 +119,12 @@ export async function detectEnvironment(options: DetectOptions = {}): Promise<En
     findAnimateConfigs(paths),
     findUpia(paths),
   ]);
+
+  let home = options.home ?? process.env["ZEPLOY_HOME"];
+  if (!home) {
+    home = join(paths.localAppData, "zeploy");
+    migrateLegacyDir(join(paths.localAppData, "zdeploy"), home);
+  }
 
   return {
     paths,
@@ -130,7 +137,7 @@ export async function detectEnvironment(options: DetectOptions = {}): Promise<En
       system: join(paths.commonFilesX86, "Adobe", "CEP", "extensions"),
       user: join(paths.appData, "Adobe", "CEP", "extensions"),
     },
-    home: options.home ?? process.env["ZDEPLOY_HOME"] ?? join(paths.localAppData, "zdeploy"),
+    home,
   };
 }
 

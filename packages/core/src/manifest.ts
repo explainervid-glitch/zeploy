@@ -1,6 +1,6 @@
-// The package manifest: zdeploy.json at the root of every plugin package.
+// The package manifest: zeploy.json at the root of every plugin package.
 //
-// A package is a folder (or a zip of that folder) holding zdeploy.json plus
+// A package is a folder (or a zip of that folder) holding zeploy.json plus
 // the files its components point at. Each component says what kind of thing
 // it is and the engine works out where it goes on the machine, so a plugin
 // never needs its own install script.
@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 
-export const MANIFEST_FILE = "zdeploy.json";
+export const MANIFEST_FILE = "zeploy.json";
 
 // A path inside the package. Absolute paths, drive letters and ".." segments
 // are refused so a manifest can never point the installer outside its own

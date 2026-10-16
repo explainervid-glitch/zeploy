@@ -1,17 +1,17 @@
-# zdeploy
+# zeploy
 
-zdeploy installs After Effects, Premiere Pro, Animate and Blender plugins on
+zeploy installs After Effects, Premiere Pro, Animate and Blender plugins on
 the team's PCs over the LAN.
 
 - The **admin app** runs on one PC (the admin PC). It keeps the plugin
   packages and shows which PC has which version.
 - A small **agent** runs on every team PC. It receives install and remove
   jobs from the admin app, installs the plugin, and reports back.
-- A **package** is a plugin folder with a `zdeploy.json` file that says what
-  the plugin contains. zdeploy works out where each part goes.
+- A **package** is a plugin folder with a `zeploy.json` file that says what
+  the plugin contains. zeploy works out where each part goes.
 
 A visual walkthrough of the flow is in
-[docs/zdeploy-workflow.html](docs/zdeploy-workflow.html) (in Indonesian; it
+[docs/zeploy-workflow.html](docs/zeploy-workflow.html) (in Indonesian; it
 was drawn before the one-click installer and PC renaming were added).
 
 **Contents:** [1. Set up the admin PC](#1-set-up-the-admin-pc) ·
@@ -34,11 +34,11 @@ Do this once, on the PC that will run the admin app.
 ### Get the code and install the dependencies
 
 ```bash
-git clone <repository URL> zdeploy
+git clone <repository URL> zeploy
 ```
 
 ```bash
-cd zdeploy
+cd zeploy
 ```
 
 ```bash
@@ -67,11 +67,11 @@ npm run admin
 ```
 
 `npm run admin` builds the app, copies it with the Electron runtime to
-`%LOCALAPPDATA%\Programs\zdeploy-admin\` and starts `zdeploy-admin.exe` from
+`%LOCALAPPDATA%\Programs\zeploy-admin\` and starts `zeploy-admin.exe` from
 there. Electron cannot start from a network share such as `Z:`, which is why it
 is copied to a local folder.
 
-Next time, start `%LOCALAPPDATA%\Programs\zdeploy-admin\zdeploy-admin.exe`
+Next time, start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe`
 directly, or pin it to the taskbar. After pulling new code, close the admin app
 and run `npm run build` (agent and admin app, in that order), then start it
 again.
@@ -99,13 +99,13 @@ Open PowerShell with "Run as administrator" on the admin PC and run these.
 1. Remove any rules that block the admin app:
 
    ```bash
-   Get-NetFirewallApplicationFilter | Where-Object Program -ieq "$env:LOCALAPPDATA\Programs\zdeploy-admin\zdeploy-admin.exe" | Get-NetFirewallRule | Remove-NetFirewallRule
+   Get-NetFirewallApplicationFilter | Where-Object Program -ieq "$env:LOCALAPPDATA\Programs\zeploy-admin\zeploy-admin.exe" | Get-NetFirewallRule | Remove-NetFirewallRule
    ```
 
 2. Allow port 7420 on Private networks:
 
    ```bash
-   New-NetFirewallRule -DisplayName "zdeploy admin (agent LAN)" -Direction Inbound -Protocol TCP -LocalPort 7420 -Action Allow -Profile Private
+   New-NetFirewallRule -DisplayName "zeploy admin (agent LAN)" -Direction Inbound -Protocol TCP -LocalPort 7420 -Action Allow -Profile Private
    ```
 
 3. Mark the office LAN as Private. Replace `Ethernet 2` with the adapter name
@@ -125,7 +125,7 @@ admin app shows its address at the top of the window, next to "Server".
 
 ## 2. Connect team PCs
 
-The agent is `zdeploy-agent.exe`, a single 88 MB file with Node inside, so
+The agent is `zeploy-agent.exe`, a single 88 MB file with Node inside, so
 team PCs need no Node install. One installer serves every PC: it holds the
 admin PC's address and the team token, and each PC creates its own id the
 first time it runs. Running it again on the same PC reinstalls the same agent.
@@ -135,15 +135,15 @@ first time it runs. Running it again on the same PC reinstalls the same agent.
 1. On the admin PC, click **Connect a PC**. Under "With the installer", enter
    or choose a folder the team PCs can open, such as `W:\00 - ZEUSPACK`, and
    click **Save installer**. The folder gets two files:
-   `Install zdeploy agent.cmd` and `zdeploy-agent.exe`.
+   `Install zeploy agent.cmd` and `zeploy-agent.exe`.
    If the admin PC has more than one network address, first pick the one the
    team PCs can reach.
 2. On the team PC, sign in as the person who uses it. That account must be a
    local administrator.
-3. Open the folder and double-click `Install zdeploy agent.cmd`. Choose
-   **Yes** when Windows asks whether zdeploy agent may make changes.
+3. Open the folder and double-click `Install zeploy agent.cmd`. Choose
+   **Yes** when Windows asks whether zeploy agent may make changes.
 4. A second window runs the setup and says
-   `The zdeploy agent is installed and running.` Within a few seconds, the PC
+   `The zeploy agent is installed and running.` Within a few seconds, the PC
    appears in the admin app with a green dot and the apps it found.
 
 The installer works when opened from a network share or a mapped drive: it
@@ -154,7 +154,7 @@ copy afterwards.
 It stops with a message, and changes nothing, when:
 
 - the signed-in account is not a local administrator,
-- `zdeploy-agent.exe` is not next to it,
+- `zeploy-agent.exe` is not next to it,
 - you choose **No** in the Windows prompt.
 
 If setup itself fails, the second window shows why and waits for you to close
@@ -169,7 +169,7 @@ once the PCs are set up. Save it again whenever you need it.
 The same setup, typed by hand:
 
 1. Sign in on the team PC as the person who uses it (a local administrator).
-2. Copy `zdeploy-agent.exe` to a local folder, such as Downloads. Do not run
+2. Copy `zeploy-agent.exe` to a local folder, such as Downloads. Do not run
    it from `Z:` or another mapped drive: an administrator terminal cannot see
    mapped drives.
 3. On the admin PC, click **Connect a PC**, open "Set up with a command
@@ -182,7 +182,7 @@ The same setup, typed by hand:
    ```
 
    ```bash
-   .\zdeploy-agent.exe setup --server 192.168.1.72:7420 --token <team token>
+   .\zeploy-agent.exe setup --server 192.168.1.72:7420 --token <team token>
    ```
 
 5. It prints the installed path and ends with `it is running now.`
@@ -193,10 +193,10 @@ a local administrator first.
 
 ### What setup does
 
-- Copies the exe to `C:\Program Files\zdeploy\zdeploy-agent.exe`.
+- Copies the exe to `C:\Program Files\zeploy\zeploy-agent.exe`.
 - Saves the server address, team token and a PC id in
-  `C:\ProgramData\zdeploy\agent.json`.
-- Registers a Scheduled Task named "zdeploy agent". It starts the agent hidden,
+  `C:\ProgramData\zeploy\agent.json`.
+- Registers a Scheduled Task named "zeploy agent". It starts the agent hidden,
   with highest privileges, every time that user signs in. If the agent stops
   with an error, the task restarts it up to three times, one minute apart.
 - Starts the agent immediately.
@@ -208,17 +208,17 @@ preferences.
 ### Manage an agent
 
 Run these in an administrator PowerShell on the team PC, from
-`C:\Program Files\zdeploy\` or wherever the exe is:
+`C:\Program Files\zeploy\` or wherever the exe is:
 
 ```bash
-.\zdeploy-agent.exe status
+.\zeploy-agent.exe status
 ```
 
 Shows the server, whether a token is set, the PC id, whether the agent is
 running, and the log path.
 
 ```bash
-.\zdeploy-agent.exe remove
+.\zeploy-agent.exe remove
 ```
 
 Stops the agent and deletes the Scheduled Task. The exe and `agent.json`
@@ -230,15 +230,34 @@ stay, and plugins it installed stay installed.
 - **Admin PC moved to another address:** save the installer again (it holds
   the new address) and run it on each team PC, or run `setup` again with the
   new `--server`.
-- **Log file:** `%LOCALAPPDATA%\zdeploy\agent.log` of the user the agent runs as.
+- **Log file:** `%LOCALAPPDATA%\zeploy\agent.log` of the user the agent runs as.
+
+### Upgrading from zdeploy
+
+zeploy was called zdeploy before. Nothing has to be set up again:
+
+- **Admin PC:** the first start of the zeploy admin app moves
+  `%APPDATA%\zdeploy-admin` to `%APPDATA%\zeploy-admin`, so packages, PCs and
+  the team token carry over. The build removes the old
+  `%LOCALAPPDATA%\Programs\zdeploy-admin` copy; unpin the old shortcut and pin
+  `zeploy-admin.exe` instead.
+- **Team PCs:** an agent installed as zdeploy keeps working with the zeploy
+  admin app. To switch it over, save the installer again under
+  **Connect a PC** and run it on the PC. It keeps the PC's id (same row, same
+  name in zeploy), moves its records, and removes the old "zdeploy agent" task,
+  process and `C:\Program Files\zdeploy` folder.
+- Delete the old `Install zdeploy agent.cmd` and `zdeploy-agent.exe` from the
+  shared folder.
+- The firewall rule from step 1 opens a port, not a program, so it keeps
+  working whatever its name.
 
 ## 3. Make a package
 
-A package is a folder with `zdeploy.json` at its root, next to the plugin
-files. zdeploy reads only `zdeploy.json` and the files its components point
+A package is a folder with `zeploy.json` at its root, next to the plugin
+files. zeploy reads only `zeploy.json` and the files its components point
 at, so the package folder can be the plugin's working folder.
 
-### Write zdeploy.json
+### Write zeploy.json
 
 ```json
 {
@@ -258,7 +277,7 @@ at, so the package folder can be the plugin's working folder.
 - `version`: `major.minor.patch`. Raise it every time the content changes; the
   admin app accepts each version only once.
 - `components`: one or more parts of the plugin. Paths are relative to the
-  folder that holds `zdeploy.json`.
+  folder that holds `zeploy.json`.
 
 ### Component types
 
@@ -279,7 +298,7 @@ Optional fields:
   or `Shutdown`. `versions` limits it to some AE installs, such as `["2024"]`.
 - `jsfl`: `folder` is `Commands` (default), `Tools`, `WindowSWF` or
   `Javascript`. `versions` works as for `ae-script`.
-- `zxp`: `extensionName` is required; zdeploy needs it to remove the extension.
+- `zxp`: `extensionName` is required; zeploy needs it to remove the extension.
 - `blender`: `kind` (`extension` or `addon`) and `module` are read from the zip
   when absent. `minBlender` and `maxBlender` limit the Blender versions, such
   as `"4.2"`. An extension's own `blender_version_min` and
@@ -320,37 +339,37 @@ JSFL commands it calls.
 
 ### Test a package on the admin PC
 
-The `zdeploy` command line runs the same install engine as the agents. Run it
-through `zdeploy.cmd` in this folder.
+The `zeploy` command line runs the same install engine as the agents. Run it
+through `zeploy.cmd` in this folder.
 
 Check the package:
 
 ```bash
-.\zdeploy.cmd validate "Z:\path\to\plugin-folder"
+.\zeploy.cmd validate "Z:\path\to\plugin-folder"
 ```
 
 See what an install would do, without changing anything:
 
 ```bash
-.\zdeploy.cmd install "Z:\path\to\plugin-folder" --dry-run
+.\zeploy.cmd install "Z:\path\to\plugin-folder" --dry-run
 ```
 
-Install it on this PC, list what zdeploy installed, and remove it again:
+Install it on this PC, list what zeploy installed, and remove it again:
 
 ```bash
-.\zdeploy.cmd install "Z:\path\to\plugin-folder"
-```
-
-```bash
-.\zdeploy.cmd list
+.\zeploy.cmd install "Z:\path\to\plugin-folder"
 ```
 
 ```bash
-.\zdeploy.cmd uninstall colosave
+.\zeploy.cmd list
+```
+
+```bash
+.\zeploy.cmd uninstall colosave
 ```
 
 If the plugin folder on your PC is a developer link (a symlink or junction to
-your working copy), zdeploy refuses to replace it. That protects the working
+your working copy), zeploy refuses to replace it. That protects the working
 copy; see [Safety rules](#safety-rules).
 
 ## 4. Install, update and remove plugins
@@ -360,12 +379,16 @@ Everything here happens in the admin app.
 ### Add a package
 
 Click **Add package**, then enter or choose the package folder (the one with
-`zdeploy.json`), or a `.zip` made by `zdeploy pack`. You can also drag a
+`zeploy.json`), or a `.zip` made by `zeploy pack`. You can also drag a
 `.zip` onto the window.
+
+To try zeploy on the team PCs first, add `examples\test-panel`: a do-nothing
+After Effects panel (`com.zeploy.testpanel`) that is safe to install and
+remove, and that leaves the registry alone.
 
 The admin app checks the package, zips it and stores it with its SHA-256. Each
 version can be added once. If the content changed, raise `version` in
-`zdeploy.json` and add it again.
+`zeploy.json` and add it again.
 
 ### Read the table
 
@@ -389,7 +412,7 @@ before you add a package.
 2. Choose what happens if the app is open on a PC:
    - **Stop and tell me** (default): the job fails with a clear message and
      nothing changes.
-   - **Close the app**: zdeploy closes it first. Unsaved work is lost.
+   - **Close the app**: zeploy closes it first. Unsaved work is lost.
    - **Install anyway, restart later**: installs while the app runs; the user
      restarts it to load the new version.
 3. Tick **Replace developer links** only for PCs where a developer link should
@@ -405,7 +428,7 @@ is queued; open it under **Activity** to cancel it.
 ### Remove from PCs
 
 Select the cells and click **Remove from PCs**. The agent removes exactly what
-zdeploy installed, using its record of the install. Cells where the package is
+zeploy installed, using its record of the install. Cells where the package is
 not installed are skipped.
 
 ### Other actions
@@ -413,7 +436,7 @@ not installed are skipped.
 - **Activity** lists every job. Click one to see its log.
 - **Remove from repository** (under a package name) deletes that version from
   the admin app. Plugins already installed on PCs stay installed.
-- **Rename** (next to a PC's name) gives the PC a name shown only in zdeploy,
+- **Rename** (next to a PC's name) gives the PC a name shown only in zeploy,
   such as the person who uses it. The Windows computer name stays next to it
   in grey, and the name survives reconnects. **Use Windows name** removes it.
 - **Forget PC** (on an offline PC) removes it from the table. It comes back
@@ -429,9 +452,9 @@ not installed are skipped.
      [Open the network for agents](#open-the-network-for-agents), and check
      that both PCs are on the same LAN.
    - It loads: the network is fine. Continue below.
-2. On the team PC, run `.\zdeploy-agent.exe status` in an administrator
+2. On the team PC, run `.\zeploy-agent.exe status` in an administrator
    PowerShell. If "running" says no, run `setup` again.
-3. Read the end of `%LOCALAPPDATA%\zdeploy\agent.log`. If it says
+3. Read the end of `%LOCALAPPDATA%\zeploy\agent.log`. If it says
    `the server rejected the team token; check the agent configuration`, run
    `setup` again with the command from **Connect a PC**.
 
@@ -441,11 +464,11 @@ not installed are skipped.
 | --- | --- |
 | `cannot reach the admin server at http://...` | The admin app is not running, the address is wrong, or the network blocks port 7420. See above |
 | `setup must be run from an administrator terminal` | Open PowerShell with "Run as administrator" |
-| `setup must be run from the built zdeploy-agent.exe (npm run build:agent)` | Use the built exe, not `npm run agent` |
+| `setup must be run from the built zeploy-agent.exe (npm run build:agent)` | Use the built exe, not `npm run agent` |
 | `setup needs --server and --token` | Copy the whole command from **Connect a PC** |
-| SmartScreen or antivirus warning | The exe is not code-signed. Choose "More info", then "Run anyway". If the antivirus quarantines it, allow `zdeploy-agent.exe` |
+| SmartScreen or antivirus warning | The exe is not code-signed. Choose "More info", then "Run anyway". If the antivirus quarantines it, allow `zeploy-agent.exe` |
 | `The account "..." is not a local administrator on this PC.` (installer) | Make that account a local administrator, sign out and in, then run the installer again |
-| `zdeploy-agent.exe was not found next to this file` (installer) | Keep `Install zdeploy agent.cmd` and `zdeploy-agent.exe` in the same folder |
+| `zeploy-agent.exe was not found next to this file` (installer) | Keep `Install zeploy agent.cmd` and `zeploy-agent.exe` in the same folder |
 | `Setup was cancelled. Nothing was installed.` (installer) | You chose No in the Windows prompt. Run it again and choose Yes |
 | **Save installer** is greyed out | The admin app has no agent to hand out. Run `npm run build:agent`, then `npm run admin` |
 
@@ -469,9 +492,9 @@ the full log. Nothing on the PC changes when a job fails before installing.
 
 | Problem | Fix |
 | --- | --- |
-| Adding a package says `... is already in the repository with different content` | Raise `version` in `zdeploy.json` |
+| Adding a package says `... is already in the repository with different content` | Raise `version` in `zeploy.json` |
 | The admin app says `The admin server could not start` | Another admin app or `npm run server` is using port 7420. Close it |
-| The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zdeploy-admin\zdeploy-admin.exe` |
+| The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe` |
 | `electron.exe` is missing after `npm install` | Run `npm run setup:electron` |
 | The UI shows Segoe UI instead of Google Sans | The admin PC has no internet; the font comes from Google Fonts. Everything else works |
 
@@ -481,26 +504,26 @@ the full log. Nothing on the PC changes when a job fails before installing.
 
 | What | Where |
 | --- | --- |
-| Admin data: packages, PCs, jobs, team token | `%APPDATA%\zdeploy-admin\` (`state.json` and `packages\`) on the admin PC |
-| Admin app | `%LOCALAPPDATA%\Programs\zdeploy-admin\` |
-| Agent | `C:\Program Files\zdeploy\zdeploy-agent.exe` |
-| Agent settings | `C:\ProgramData\zdeploy\agent.json` |
-| Install records, staging, agent log | `%LOCALAPPDATA%\zdeploy\` of the user the agent runs as |
+| Admin data: packages, PCs, jobs, team token | `%APPDATA%\zeploy-admin\` (`state.json` and `packages\`) on the admin PC |
+| Admin app | `%LOCALAPPDATA%\Programs\zeploy-admin\` |
+| Agent | `C:\Program Files\zeploy\zeploy-agent.exe` |
+| Agent settings | `C:\ProgramData\zeploy\agent.json` |
+| Install records, staging, agent log | `%LOCALAPPDATA%\zeploy\` of the user the agent runs as |
 | Saved installers (hold the team token) | The folder you chose under **Connect a PC** |
 
-Back up `%APPDATA%\zdeploy-admin\` on the admin PC. It holds the team token;
+Back up `%APPDATA%\zeploy-admin\` on the admin PC. It holds the team token;
 if it is lost, the admin app creates a new token and every PC needs `setup`
 again.
 
-### Command line (zdeploy)
+### Command line (zeploy)
 
 ```bash
-zdeploy detect [--json]                 # installed apps and install locations
-zdeploy validate <folder|zip>           # check a package
-zdeploy pack <folder> [--out <dir>]     # build <id>-<version>.zip and print its SHA-256
-zdeploy install <folder|zip> [options]
-zdeploy uninstall <id> [options]
-zdeploy list                            # packages installed by zdeploy on this PC
+zeploy detect [--json]                 # installed apps and install locations
+zeploy validate <folder|zip>           # check a package
+zeploy pack <folder> [--out <dir>]     # build <id>-<version>.zip and print its SHA-256
+zeploy install <folder|zip> [options]
+zeploy uninstall <id> [options]
+zeploy list                            # packages installed by zeploy on this PC
 ```
 
 | Option | Meaning |
@@ -513,7 +536,7 @@ zdeploy list                            # packages installed by zdeploy on this 
 | `--blender 4.2,5.1` | Only these Blender versions |
 | `--sha256 <hex>` | Refuse a zip whose hash differs |
 
-### Agent commands (zdeploy-agent.exe)
+### Agent commands (zeploy-agent.exe)
 
 | Command | Meaning |
 | --- | --- |
@@ -553,26 +576,26 @@ zdeploy list                            # packages installed by zdeploy on this 
   token that changes every time the admin app starts.
 - Traffic is not encrypted: another PC on the LAN could read a package while
   it downloads.
-- `zdeploy-agent.exe` is not code-signed.
+- `zeploy-agent.exe` is not code-signed.
 - A saved installer holds the team token. Anyone with the token who can also
   intercept LAN traffic could pose as the admin app and send install jobs to
   agents, so keep installers where only the team can open them. The
-  repository's `.gitignore` excludes `Install zdeploy agent.cmd` and
-  `zdeploy-agent.exe` so neither is committed by accident.
+  repository's `.gitignore` excludes `Install zeploy agent.cmd` and
+  `zeploy-agent.exe` so neither is committed by accident.
 
 ## 7. Development
 
 | Folder | What it is |
 | --- | --- |
 | `packages/core` | Package format, app detection and the install engine |
-| `packages/cli` | `zdeploy` command line |
+| `packages/cli` | `zeploy` command line |
 | `packages/protocol` | Authenticated messages between admin server and agents |
 | `packages/server` | Admin server: packages, agent connections, jobs, and the admin UI (`ui/`) |
 | `packages/admin` | Electron shell around the admin server |
 | `packages/agent` | Agent; runs jobs through `packages/core` |
 | `scripts/build.mjs` | Builds the agent exe and the admin app |
 | `docs/` | Workflow diagram (source JSON and rendered HTML) |
-| `zdeploy.cmd` | Runs the `zdeploy` command line from this folder |
+| `zeploy.cmd` | Runs the `zeploy` command line from this folder |
 
 Node runs the TypeScript sources directly; only the admin app and the agent
 exe are bundled. The working copy has lived on a network share, where npm
@@ -584,12 +607,12 @@ the root and the packages import each other by relative path.
 | `npm test` | All tests (`node --test`) |
 | `npm run typecheck` | TypeScript check, no output files |
 | `npm run build` | Agent exe, then the admin app |
-| `npm run build:agent` | `dist\agent\zdeploy-agent.exe` |
-| `npm run build:admin` | `dist\admin` and the runnable copy in `%LOCALAPPDATA%\Programs\zdeploy-admin` |
+| `npm run build:agent` | `dist\zeploy-agent\zeploy-agent.exe` |
+| `npm run build:admin` | `dist\admin` and the runnable copy in `%LOCALAPPDATA%\Programs\zeploy-admin` |
 | `npm run admin` | `build:admin`, then start the admin app |
 | `npm run server` | Admin server without Electron (open `http://127.0.0.1:7420/`) |
 | `npm run agent -- <command>` | Agent from source, e.g. `status` or `run` (not `setup`, which needs the built exe) |
-| `npm run zdeploy -- <command>` | The `zdeploy` command line |
+| `npm run zeploy -- <command>` | The `zeploy` command line |
 | `npm run setup:electron` | Download the Electron runtime if `npm install` skipped it |
 
 ```bash
@@ -603,33 +626,33 @@ npm run typecheck
 A separate test server, off the LAN, with its own data:
 
 ```bash
-npm run server -- --host 127.0.0.1 --port 7421 --data .zdeploy-test/admin-data
+npm run server -- --host 127.0.0.1 --port 7421 --data .zeploy-test/admin-data
 ```
 
 To try Blender installs without touching your real Blender preferences, set
 `BLENDER_USER_RESOURCES`, `BLENDER_USER_CONFIG`, `BLENDER_USER_SCRIPTS` and
-`BLENDER_USER_EXTENSIONS` to a scratch folder first. zdeploy follows the same
+`BLENDER_USER_EXTENSIONS` to a scratch folder first. zeploy follows the same
 variables.
 
 Environment variables for running test copies next to the real ones:
 
 | Variable | Default |
 | --- | --- |
-| `ZDEPLOY_PORT` | `7420` (admin app) |
-| `ZDEPLOY_ADMIN_HOST` | all interfaces; `127.0.0.1` keeps a test server off the LAN |
-| `ZDEPLOY_ADMIN_DATA` | `%APPDATA%\zdeploy-admin` |
-| `ZDEPLOY_ADMIN_OUT` | `%LOCALAPPDATA%\Programs\zdeploy-admin` (where `npm run admin` puts the app) |
-| `ZDEPLOY_AGENT_CONFIG` | `%ProgramData%\zdeploy\agent.json` |
-| `ZDEPLOY_HOME` | `%LOCALAPPDATA%\zdeploy` (install records, staging, agent log) |
+| `ZEPLOY_PORT` | `7420` (admin app) |
+| `ZEPLOY_ADMIN_HOST` | all interfaces; `127.0.0.1` keeps a test server off the LAN |
+| `ZEPLOY_ADMIN_DATA` | `%APPDATA%\zeploy-admin` |
+| `ZEPLOY_ADMIN_OUT` | `%LOCALAPPDATA%\Programs\zeploy-admin` (where `npm run admin` puts the app) |
+| `ZEPLOY_AGENT_CONFIG` | `%ProgramData%\zeploy\agent.json` |
+| `ZEPLOY_HOME` | `%LOCALAPPDATA%\zeploy` (install records, staging, agent log) |
 
 The admin app allows one instance at a time. To run a test copy with
-`ZDEPLOY_ADMIN_DATA` and `ZDEPLOY_PORT`, close the real one first.
+`ZEPLOY_ADMIN_DATA` and `ZEPLOY_PORT`, close the real one first.
 
 ## Status and roadmap
 
 Done:
 
-- **Phase 1:** package format, install engine and `zdeploy` command line, with
+- **Phase 1:** package format, install engine and `zeploy` command line, with
   developer-link safety for CEP and Blender.
 - **Phase 2:** admin app (Electron), agents on team PCs, authenticated jobs,
   one-click installer, PC renaming.
@@ -641,4 +664,4 @@ Planned for phase 3:
 - Encrypted connections (TLS)
 - Finding the admin app on the LAN automatically, without typing its address
 - A Windows notification on the team PC when a plugin was installed
-- Code-signing `zdeploy-agent.exe`
+- Code-signing `zeploy-agent.exe`

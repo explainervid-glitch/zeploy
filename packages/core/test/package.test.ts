@@ -9,7 +9,7 @@ import { makeTmp, write, writeCepPanel } from "./helpers.ts";
 async function makePackageFolder(root: string) {
   const dir = join(root, "src");
   await write(
-    join(dir, "zdeploy.json"),
+    join(dir, "zeploy.json"),
     JSON.stringify({
       schemaVersion: 1,
       id: "colosave",
@@ -33,7 +33,7 @@ test("pack keeps only the manifest and component sources", async () => {
   assert.deepEqual(names, [
     "cep/com.colosave.panel/CSXS/manifest.xml",
     "cep/com.colosave.panel/index.html",
-    "zdeploy.json",
+    "zeploy.json",
   ]);
   assert.equal(r.sha256, sha256(await readFile(r.path)));
 });
@@ -66,7 +66,7 @@ test("a zip with a path escaping the staging folder extracts nothing", async () 
   await writeFile(
     zip,
     zipSync({
-      "zdeploy.json": strToU8("{}"),
+      "zeploy.json": strToU8("{}"),
       "../escaped.txt": strToU8("x"),
     }),
   );
@@ -78,7 +78,7 @@ test("a zip with a path escaping the staging folder extracts nothing", async () 
 test("a component source missing from the package is reported", async () => {
   const root = await makeTmp();
   await write(
-    join(root, "zdeploy.json"),
+    join(root, "zeploy.json"),
     JSON.stringify({
       schemaVersion: 1,
       id: "x",

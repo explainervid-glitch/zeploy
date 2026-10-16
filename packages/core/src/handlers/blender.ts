@@ -8,7 +8,7 @@
 // Developer links need care here. Blender replaces an existing add-on with
 // shutil.rmtree, and on Python 3.11 (Blender 4.2) rmtree walks into a
 // directory junction and deletes what it points at. So a link in the way is
-// either refused, or removed as a link by zdeploy before Blender runs.
+// either refused, or removed as a link by zeploy before Blender runs.
 
 import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
@@ -162,7 +162,7 @@ function addonInstallScript(file: string, module: string): string {
     ...addonPathsPrelude(module),
     "for p in paths:",
     "    if is_link(p):",
-    "        print('zdeploy: refusing to replace developer link ' + p); sys.exit(3)",
+    "        print('zeploy: refusing to replace developer link ' + p); sys.exit(3)",
     `r = bpy.ops.preferences.addon_install(filepath=${py(file)}, overwrite=True)`,
     "if 'FINISHED' not in r: sys.exit(1)",
     "r = bpy.ops.preferences.addon_enable(module=m)",
@@ -179,7 +179,7 @@ function addonRemoveScript(module: string): string {
     ...addonPathsPrelude(module),
     "addon_utils.disable(m, default_set=True)",
     "for p in paths:",
-    "    if is_link(p): print('zdeploy: leaving developer link ' + p)",
+    "    if is_link(p): print('zeploy: leaving developer link ' + p)",
     "    elif os.path.isdir(p): shutil.rmtree(p)",
     "    elif os.path.isfile(p): os.remove(p)",
     "bpy.ops.wm.save_userpref()",

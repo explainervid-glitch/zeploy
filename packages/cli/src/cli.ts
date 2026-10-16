@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// zdeploy: install, remove and inspect plugin packages on this machine.
+// zeploy: install, remove and inspect plugin packages on this machine.
 // Phase 1 front end for the core engine; the LAN agent will call the same
 // engine directly.
 
@@ -25,15 +25,15 @@ import {
   type IfRunning,
 } from "../../core/src/index.ts";
 
-const USAGE = `zdeploy - plugin installer for After Effects, Premiere Pro, Animate and Blender
+const USAGE = `zeploy - plugin installer for After Effects, Premiere Pro, Animate and Blender
 
 Usage:
-  zdeploy detect [--json]                 Show installed apps and install locations
-  zdeploy validate <package>              Check a package folder or .zip
-  zdeploy pack <folder> [--out <dir>]     Build <id>-<version>.zip from a package folder
-  zdeploy install <package> [options]     Install a package folder or .zip
-  zdeploy uninstall <id> [options]        Remove an installed package
-  zdeploy list                            Show packages installed by zdeploy
+  zeploy detect [--json]                 Show installed apps and install locations
+  zeploy validate <package>              Check a package folder or .zip
+  zeploy pack <folder> [--out <dir>]     Build <id>-<version>.zip from a package folder
+  zeploy install <package> [options]     Install a package folder or .zip
+  zeploy uninstall <id> [options]        Remove an installed package
+  zeploy list                            Show packages installed by zeploy
 
 Install / uninstall options:
   --dry-run                    Print what would happen, change nothing
@@ -84,7 +84,7 @@ function printEnvironment(env: Environment): void {
   log(`  all users  ${env.cep.system}`);
   log(`  this user  ${env.cep.user}`);
   log(`UPIA:         ${env.upia ?? "(not found)"}`);
-  log(`zdeploy home: ${env.home}`);
+  log(`zeploy home: ${env.home}`);
 }
 
 async function cmdValidate(path: string, env: Environment): Promise<void> {
@@ -197,7 +197,7 @@ async function main(argv: string[]): Promise<number> {
 
     case "list": {
       const receipts = await listReceipts(env);
-      if (receipts.length === 0) log("No packages installed by zdeploy.");
+      if (receipts.length === 0) log("No packages installed by zeploy.");
       for (const r of receipts) {
         const apps = r.apps.map((a) => APP_LABELS[a]).join(", ");
         log(`${r.id.padEnd(24)} ${r.version.padEnd(10)} ${localTime(r.installedAt)}  ${apps}`);

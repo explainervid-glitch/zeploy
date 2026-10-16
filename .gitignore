@@ -3,11 +3,11 @@ node_modules/
 dist/
 
 # Local test server data (holds a team token)
-.zdeploy-test/
+.zeploy-test/
 
 # A saved agent installer holds the team token: never commit one
-Install zdeploy agent.cmd
-zdeploy-agent.exe
+Install zeploy agent.cmd
+zeploy-agent.exe
 
 # Archify visual-check evidence (screenshots and receipts)
 docs/*.visual-check.*

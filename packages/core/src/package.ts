@@ -1,7 +1,7 @@
 // Opening, extracting and building plugin packages.
 //
-// On disk a package is either a folder holding zdeploy.json, or a .zip of that
-// folder with zdeploy.json at the archive root. A zip is extracted to a local
+// On disk a package is either a folder holding zeploy.json, or a .zip of that
+// folder with zeploy.json at the archive root. A zip is extracted to a local
 // staging folder first, so installs never run from a network share: an
 // elevated process cannot see mapped drives such as Z:.
 
@@ -133,7 +133,7 @@ export interface PackResult {
   manifest: Manifest;
 }
 
-// Builds <id>-<version>.zip from a package folder. Only zdeploy.json and the
+// Builds <id>-<version>.zip from a package folder. Only zeploy.json and the
 // component sources go in; everything else in the folder (tests, docs,
 // version control) stays out.
 export async function packPackage(folder: string, outDir: string): Promise<PackResult> {

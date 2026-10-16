@@ -4,11 +4,15 @@
 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { migrateLegacyDir } from "../../core/src/index.ts";
 import { DEFAULT_PORT } from "../../protocol/src/index.ts";
 import { startServer } from "./server.ts";
 
 function defaultDataDir(): string {
-  return join(process.env["APPDATA"] ?? process.cwd(), "zdeploy-admin");
+  const appData = process.env["APPDATA"] ?? process.cwd();
+  const dir = join(appData, "zeploy-admin");
+  migrateLegacyDir(join(appData, "zdeploy-admin"), dir);
+  return dir;
 }
 
 const { values } = parseArgs({
@@ -26,7 +30,7 @@ const server = await startServer({
   host: values.host,
   uiDir: join(import.meta.dirname, "..", "ui"),
   // Built by npm run build:agent.
-  agentExe: join(import.meta.dirname, "..", "..", "..", "dist", "agent", "zdeploy-agent.exe"),
+  agentExe: join(import.meta.dirname, "..", "..", "..", "dist", "zeploy-agent", "zeploy-agent.exe"),
 });
 console.log(`Admin UI: ${server.adminUrl}`);
 

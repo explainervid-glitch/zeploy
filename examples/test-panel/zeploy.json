@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "zeploy-test-panel",
+  "name": "zeploy test panel",
+  "version": "1.0.0",
+  "description": "A do-nothing After Effects panel for trying installs on team PCs. Safe to install and remove.",
+  "components": [
+    { "type": "cep", "source": "panel", "playerDebugMode": false }
+  ]
+}

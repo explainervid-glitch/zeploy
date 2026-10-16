@@ -6,10 +6,18 @@
 import { join } from "node:path";
 import { run } from "../../core/src/index.ts";
 
-export const TASK_NAME = "zdeploy agent";
+export const TASK_NAME = "zeploy agent";
+// The names used before the app was renamed from "zdeploy" to "zeploy".
+export const LEGACY_TASK_NAME = "zdeploy agent";
+
+const programFiles = () => process.env["ProgramFiles"] ?? "C:\\Program Files";
 
 export function installedExePath(): string {
-  return join(process.env["ProgramFiles"] ?? "C:\\Program Files", "zdeploy", "zdeploy-agent.exe");
+  return join(programFiles(), "zeploy", "zeploy-agent.exe");
+}
+
+export function legacyExeDir(): string {
+  return join(programFiles(), "zdeploy");
 }
 
 function psQuote(s: string): string {
@@ -40,9 +48,9 @@ export async function startTask(): Promise<void> {
   await powershell(`Start-ScheduledTask -TaskName ${psQuote(TASK_NAME)}`);
 }
 
-export async function removeTask(): Promise<boolean> {
+export async function removeTask(name = TASK_NAME): Promise<boolean> {
   try {
-    await powershell(`Unregister-ScheduledTask -TaskName ${psQuote(TASK_NAME)} -Confirm:$false -ErrorAction Stop`);
+    await powershell(`Unregister-ScheduledTask -TaskName ${psQuote(name)} -Confirm:$false -ErrorAction Stop`);
     return true;
   } catch {
     return false;

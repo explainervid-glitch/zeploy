@@ -7,7 +7,7 @@ import { collectLog, fakeEnv, makeTmp, noProcesses, write, writeCepPanel } from 
 
 async function writePackage(dir: string, version: string, installName: string) {
   await write(
-    join(dir, "zdeploy.json"),
+    join(dir, "zeploy.json"),
     JSON.stringify({
       schemaVersion: 1,
       id: "colosave",

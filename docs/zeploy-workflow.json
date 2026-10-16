@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Alur kerja zdeploy",
+    "title": "Alur kerja zeploy",
     "quality_profile": "showcase",
     "legend": {
       "entries": {
@@ -15,7 +15,7 @@
       }
     },
     "views": [
-      { "id": "tambah-paket", "label": "Menambah paket", "focus": ["prepare", "import", "repo"], "note": "Folder plugin + zdeploy.json divalidasi, di-zip, dan disimpan dengan SHA-256." },
+      { "id": "tambah-paket", "label": "Menambah paket", "focus": ["prepare", "import", "repo"], "note": "Folder plugin + zeploy.json divalidasi, di-zip, dan disimpan dengan SHA-256." },
       { "id": "push-ke-pc", "label": "Push ke PC tim", "focus": ["select", "queue", "dispatch", "download", "plan", "install"], "note": "Admin memilih sel di matriks; server mengirim job bertanda HMAC; agent memasang lewat packages/core." },
       { "id": "laporan", "label": "Hasil kembali ke admin", "focus": ["install", "report", "matrix"], "note": "Agent mengirim jobDone dan daftar receipt; matriks di admin app diperbarui lewat SSE." },
       { "id": "pengaman", "label": "Pengaman", "focus": ["dispatch", "download", "plan"], "note": "Token tim tidak dikirim; job bertanda HMAC; unduhan dicek SHA-256; dev link tidak pernah dihapus menembus." },
@@ -23,7 +23,7 @@
     ]
   },
   "lanes": [
-    { "id": "admin", "label": "Komputer admin (zdeploy-admin)" },
+    { "id": "admin", "label": "Komputer admin (zeploy-admin)" },
     { "id": "server", "label": "Server admin (port 7420)" },
     { "id": "agent", "label": "Agent di PC tim" },
     { "id": "exceptions", "label": "Menunggu / gagal", "variant": "exception" }
@@ -38,7 +38,7 @@
   ],
   "mainPath": ["prepare", "import", "select", "queue", "dispatch", "download", "plan", "install", "report", "matrix"],
   "nodes": [
-    { "id": "prepare", "lane": "admin", "col": 0, "width": 132, "type": "frontend", "label": "Folder plugin", "sublabel": "berisi zdeploy.json" },
+    { "id": "prepare", "lane": "admin", "col": 0, "width": 132, "type": "frontend", "label": "Folder plugin", "sublabel": "berisi zeploy.json" },
     { "id": "import", "lane": "admin", "col": 1, "width": 132, "type": "frontend", "label": "Tambah paket", "sublabel": "folder atau .zip" },
     { "id": "select", "lane": "admin", "col": 2, "width": 132, "type": "frontend", "label": "Pilih sel matriks", "sublabel": "lalu klik Pasang" },
     { "id": "matrix", "lane": "admin", "col": 5, "width": 132, "type": "frontend", "label": "Matriks diperbarui", "sublabel": "status per PC" },

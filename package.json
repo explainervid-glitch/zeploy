@@ -1,5 +1,5 @@
 {
-  "name": "zdeploy",
+  "name": "zeploy",
   "version": "0.1.0",
   "private": true,
   "description": "Deploy After Effects, Premiere Pro, Animate and Blender plugins to the team's PCs over the LAN.",
@@ -8,7 +8,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "zdeploy": "node packages/cli/src/cli.ts",
+    "zeploy": "node packages/cli/src/cli.ts",
     "server": "node packages/server/src/main.ts",
     "agent": "node packages/agent/src/main.ts",
     "admin": "node scripts/build.mjs admin --launch",

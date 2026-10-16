@@ -17,7 +17,7 @@ const agents: RunningAgent[] = [];
 async function api(method: string, path: string, body?: unknown, token = server.adminToken) {
   const res = await fetch(`http://127.0.0.1:${server.port}${path}`, {
     method,
-    headers: { "x-zdeploy-admin": token, "content-type": "application/json" },
+    headers: { "x-zeploy-admin": token, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: (await res.json()) as any };
@@ -35,7 +35,7 @@ async function waitFor<T>(what: string, fn: () => Promise<T | undefined | null |
 
 async function writePackage(dir: string, version: string, marker: string) {
   await write(
-    join(dir, "zdeploy.json"),
+    join(dir, "zeploy.json"),
     JSON.stringify({
       schemaVersion: 1,
       id: "colosave",
@@ -81,12 +81,12 @@ async function jobFinished(id: string) {
 
 before(async () => {
   root = await makeTmp();
-  await write(join(root, "build", "zdeploy-agent.exe"), "fake agent");
+  await write(join(root, "build", "zeploy-agent.exe"), "fake agent");
   server = await startServer({
     dataDir: join(root, "admin"),
     port: 0,
     host: "127.0.0.1",
-    agentExe: join(root, "build", "zdeploy-agent.exe"),
+    agentExe: join(root, "build", "zeploy-agent.exe"),
     log: () => {},
   });
 });
@@ -101,7 +101,7 @@ test("admin API needs the admin token and a localhost Host header", async () => 
 
   const status = await new Promise<number>((resolveStatus) => {
     request(
-      { host: "127.0.0.1", port: server.port, path: "/api/state", headers: { host: "evil.example:80", "x-zdeploy-admin": server.adminToken } },
+      { host: "127.0.0.1", port: server.port, path: "/api/state", headers: { host: "evil.example:80", "x-zeploy-admin": server.adminToken } },
       (res) => resolveStatus(res.statusCode ?? 0),
     ).end();
   });
@@ -118,13 +118,28 @@ test("an agent with the wrong team token is rejected", async () => {
 
 test("import, push install, report state, uninstall", async () => {
   await writePackage(join(root, "pkg-v1"), "1.0.0", "v1");
+  const preview = await api("POST", "/api/packages/inspect", { path: join(root, "pkg-v1") });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.deepEqual(
+    { name: preview.body.name, version: preview.body.version, apps: preview.body.apps, status: preview.body.status },
+    { name: "Colosave", version: "1.0.0", apps: ["aftereffects"], status: "new" },
+  );
+  assert.deepEqual((await api("GET", "/api/state")).body.packages, [], "inspect stores nothing");
+
   const imported = await api("POST", "/api/packages/import", { path: join(root, "pkg-v1") });
   assert.equal(imported.status, 200, JSON.stringify(imported.body));
   assert.equal(imported.body.version, "1.0.0");
+  assert.deepEqual(imported.body.apps, ["aftereffects"]);
+  assert.equal((await api("POST", "/api/packages/inspect", { path: join(root, "pkg-v1") })).body.status, "same");
 
   // Same version, different content: refused.
   await writePackage(join(root, "pkg-v1b"), "1.0.0", "changed");
+  assert.equal((await api("POST", "/api/packages/inspect", { path: join(root, "pkg-v1b") })).body.status, "conflict");
   assert.equal((await api("POST", "/api/packages/import", { path: join(root, "pkg-v1b") })).status, 409);
+  assert.match(
+    (await api("POST", "/api/packages/inspect", { path: join(root, "nope") })).body.error,
+    /not found/,
+  );
 
   const agent = launchAgent(server.store.data.enrollToken);
   const record = await agentOnline(true);

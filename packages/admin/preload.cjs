@@ -2,6 +2,6 @@
 // folder picker; the UI talks to the server over HTTP like a browser does.
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("zdeployDesktop", {
+contextBridge.exposeInMainWorld("zeployDesktop", {
   pickFolder: (title) => ipcRenderer.invoke("pick-folder", String(title ?? "")),
 });

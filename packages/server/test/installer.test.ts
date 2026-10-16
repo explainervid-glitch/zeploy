@@ -16,7 +16,7 @@ test("the installer carries the server and token and runs setup when elevated", 
   assert.ok(text.includes("Made: 2026-10-16 09:05"));
   assert.ok(text.includes('if /i "%~1"=="elevated" goto elevated'));
   assert.ok(text.includes(":elevated\r\n"));
-  assert.ok(text.includes('"%~dp0zdeploy-agent.exe" setup --server %ZD_SERVER% --token %ZD_TOKEN%'));
+  assert.ok(text.includes('"%~dp0zeploy-agent.exe" setup --server %ZD_SERVER% --token %ZD_TOKEN%'));
   assert.ok(text.includes("-ArgumentList 'elevated' -Verb RunAs -Wait -PassThru"));
 });
 

@@ -19,7 +19,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import * as P from "../../protocol/src/index.ts";
 import { writeInstaller } from "./installer.ts";
-import { HttpError, importPackage, latestPackage, packagesDir, removePackage } from "./packages.ts";
+import { HttpError, importPackage, inspectPackage, latestPackage, packagesDir, removePackage } from "./packages.ts";
 import { MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
 
 export interface ServerOptions {
@@ -30,7 +30,7 @@ export interface ServerOptions {
   host?: string;
   // Folder holding the admin UI (index.html, app.js, style.css).
   uiDir?: string;
-  // zdeploy-agent.exe, copied next to the one-click installer it saves.
+  // zeploy-agent.exe, copied next to the one-click installer it saves.
   agentExe?: string;
   log?: (line: string) => void;
 }
@@ -374,7 +374,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     req.on("close", () => sseClients.delete(res));
   }
 
-  async function uploadPackage(req: IncomingMessage): Promise<unknown> {
+  async function uploadPackage(req: IncomingMessage): Promise<Awaited<ReturnType<typeof importPackage>>> {
     const tmp = join(store.dir, "staging", `upload-${randomUUID()}.zip`);
     await mkdir(join(store.dir, "staging"), { recursive: true });
     let size = 0;
@@ -442,16 +442,20 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         if (!job) throw new HttpError(404, "no such job");
         return json(res, 200, job);
       }
+      case "POST /api/packages/inspect": {
+        const { path } = z.object({ path: z.string().min(1) }).parse(await readJson(req));
+        return json(res, 200, await inspectPackage(store, path));
+      }
       case "POST /api/packages/import": {
         const { path } = z.object({ path: z.string().min(1) }).parse(await readJson(req));
-        const record = await importPackage(store, path);
+        const { record, apps } = await importPackage(store, path);
         changed();
-        return json(res, 200, record);
+        return json(res, 200, { ...record, apps });
       }
       case "POST /api/packages/upload": {
-        const record = await uploadPackage(req);
+        const { record, apps } = await uploadPackage(req);
         changed();
-        return json(res, 200, record);
+        return json(res, 200, { ...record, apps });
       }
       case "DELETE /api/packages":
         await removePackage(store, q("id"), q("version"));
@@ -512,7 +516,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
 
     if (!isAdminRequest(req)) throw new HttpError(403, "the admin interface is only available on the admin computer");
     if (url.pathname.startsWith("/api/")) {
-      const token = req.headers["x-zdeploy-admin"] ?? (url.pathname === "/api/events" ? url.searchParams.get("token") : null);
+      const token = req.headers["x-zeploy-admin"] ?? (url.pathname === "/api/events" ? url.searchParams.get("token") : null);
       if (typeof token !== "string" || !P.safeEqual(token, adminToken)) throw new HttpError(401, "missing admin token");
       return api(req, res, url);
     }
@@ -547,7 +551,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   });
   const address = http.address();
   if (address && typeof address === "object") port = address.port;
-  log(`zdeploy admin server on port ${port} (LAN: ${lanAddresses().join(", ") || "no network"})`);
+  log(`zeploy admin server on port ${port} (LAN: ${lanAddresses().join(", ") || "no network"})`);
 
   return {
     port,

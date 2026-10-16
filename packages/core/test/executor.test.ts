@@ -18,7 +18,7 @@ test("replaceDir swaps in the new copy and skips excluded and VCS files", async 
   await replaceDir(from, to, [".debug"]);
   assert.deepEqual((await readdir(to)).sort(), ["index.html"]);
   assert.equal(await readFile(join(to, "index.html"), "utf8"), "new");
-  await assert.rejects(stat(`${to}.zdeploy-new`));
+  await assert.rejects(stat(`${to}.zeploy-new`));
 });
 
 test("removeSafe deletes a junction without touching the folder it points at", async () => {

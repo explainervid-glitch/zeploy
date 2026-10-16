@@ -1,9 +1,9 @@
 // Builds the deliverables:
 //   node scripts/build.mjs admin [--launch]
 //       dist/admin (the app files) and a runnable copy with the Electron
-//       runtime at %LOCALAPPDATA%\Programs\zdeploy-admin\zdeploy-admin.exe
+//       runtime at %LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe
 //   node scripts/build.mjs agent
-//       dist/agent/zdeploy-agent.exe (Node single executable)
+//       dist/zeploy-agent/zeploy-agent.exe (Node single executable)
 //
 // The sources are TypeScript run directly by Node during development; esbuild
 // bundles them into one CommonJS file for Electron and for the Node SEA blob.
@@ -22,14 +22,14 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const r = (...p) => join(root, ...p);
 const version = "0.2.0";
 const adminInstallDir =
-  process.env.ZDEPLOY_ADMIN_OUT ?? join(process.env.LOCALAPPDATA ?? root, "Programs", "zdeploy-admin");
+  process.env.ZEPLOY_ADMIN_OUT ?? join(process.env.LOCALAPPDATA ?? root, "Programs", "zeploy-admin");
 
 async function readText(path) {
   return readFile(path, "utf8").catch(() => null);
 }
 
 // Copies the Electron runtime (only when its version changed) and the app
-// files into adminInstallDir, with electron.exe renamed to zdeploy-admin.exe.
+// files into adminInstallDir, with electron.exe renamed to zeploy-admin.exe.
 async function assembleAdmin(appDir) {
   const electronDist = r("node_modules", "electron", "dist");
   const electronVersion = await readText(join(electronDist, "version"));
@@ -41,13 +41,22 @@ async function assembleAdmin(appDir) {
       recursive: true,
       filter: (src) => basename(src).toLowerCase() !== "electron.exe" || src === electronDist,
     });
-    await copyFile(join(electronDist, "electron.exe"), join(adminInstallDir, "zdeploy-admin.exe"));
+    await copyFile(join(electronDist, "electron.exe"), join(adminInstallDir, "zeploy-admin.exe"));
   }
   const resourcesApp = join(adminInstallDir, "resources", "app");
   await rm(resourcesApp, { recursive: true, force: true });
   await cp(appDir, resourcesApp, { recursive: true });
-  const exe = join(adminInstallDir, "zdeploy-admin.exe");
+  const exe = join(adminInstallDir, "zeploy-admin.exe");
   console.log(`admin app ready: ${exe}`);
+
+  // The copy assembled before the app was renamed from "zdeploy".
+  if (!process.env.ZEPLOY_ADMIN_OUT) {
+    const legacy = join(process.env.LOCALAPPDATA ?? root, "Programs", "zdeploy-admin");
+    await rm(legacy, { recursive: true, force: true }).then(
+      () => {},
+      () => console.warn(`could not remove ${legacy}; close the old zdeploy admin app and delete it`),
+    );
+  }
   return exe;
 }
 
@@ -68,16 +77,16 @@ async function buildAdmin() {
   await cp(r("packages", "server", "ui"), join(out, "ui"), { recursive: true });
   await copyFile(r("packages", "admin", "preload.cjs"), join(out, "preload.cjs"));
   // The admin app hands this exe out with the one-click installer.
-  const agentExe = r("dist", "agent", "zdeploy-agent.exe");
+  const agentExe = r("dist", "zeploy-agent", "zeploy-agent.exe");
   if (await stat(agentExe).then(() => true, () => false)) {
     await mkdir(join(out, "agent"), { recursive: true });
-    await copyFile(agentExe, join(out, "agent", "zdeploy-agent.exe"));
+    await copyFile(agentExe, join(out, "agent", "zeploy-agent.exe"));
   } else {
-    console.warn("dist/agent/zdeploy-agent.exe not found: run npm run build:agent first, or the admin app cannot save installers");
+    console.warn("dist/zeploy-agent/zeploy-agent.exe not found: run npm run build:agent first, or the admin app cannot save installers");
   }
   await writeFile(
     join(out, "package.json"),
-    JSON.stringify({ name: "zdeploy-admin", productName: "zdeploy", version, main: "main.cjs" }, null, 2),
+    JSON.stringify({ name: "zeploy-admin", productName: "zeploy", version, main: "main.cjs" }, null, 2),
   );
   console.log(`built ${out}`);
   const exe = await assembleAdmin(out);
@@ -87,7 +96,7 @@ async function buildAdmin() {
 }
 
 async function buildAgent() {
-  const out = r("dist", "agent");
+  const out = r("dist", "zeploy-agent");
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   const bundle = join(out, "agent.cjs");
@@ -109,7 +118,7 @@ async function buildAgent() {
     JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true }, null, 2),
   );
   execFileSync(process.execPath, ["--experimental-sea-config", seaConfig], { stdio: "inherit" });
-  const exe = join(out, "zdeploy-agent.exe");
+  const exe = join(out, "zeploy-agent.exe");
   await copyFile(process.execPath, exe);
   execFileSync(
     process.execPath,

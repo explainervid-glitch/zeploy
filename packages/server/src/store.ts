@@ -21,7 +21,7 @@ export interface PackageRecord {
 
 export interface AgentRecord {
   id: string;
-  // Name the admin gave this PC in zdeploy; the Windows name stays `hostname`.
+  // Name the admin gave this PC in zeploy; the Windows name stays `hostname`.
   label?: string;
   hostname: string;
   user: string;

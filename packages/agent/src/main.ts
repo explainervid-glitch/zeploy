@@ -1,22 +1,30 @@
-// zdeploy-agent command line.
+// zeploy-agent command line.
 //
-//   zdeploy-agent setup --server <ip[:port]> --token <team token>   (administrator terminal)
-//   zdeploy-agent run                                               (what the Scheduled Task starts)
-//   zdeploy-agent configure --server ... --token ...
-//   zdeploy-agent status
-//   zdeploy-agent remove                                            (administrator terminal)
+//   zeploy-agent setup --server <ip[:port]> --token <team token>   (administrator terminal)
+//   zeploy-agent run                                               (what the Scheduled Task starts)
+//   zeploy-agent configure --server ... --token ...
+//   zeploy-agent status
+//   zeploy-agent remove                                            (administrator terminal)
 
-import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { copyFile, mkdir } from "node:fs/promises";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isSea } from "node:sea";
 import { parseArgs } from "node:util";
-import { isElevated, run } from "../../core/src/index.ts";
+import { isElevated, migrateLegacyDir, run } from "../../core/src/index.ts";
 import { AGENT_VERSION, startAgent } from "./agent.ts";
 import { configPath, loadConfig, newAgentId, normalizeServerUrl, saveConfig } from "./config.ts";
-import { installedExePath, registerTask, removeTask, startTask, TASK_NAME } from "./task.ts";
+import {
+  installedExePath,
+  LEGACY_TASK_NAME,
+  legacyExeDir,
+  registerTask,
+  removeTask,
+  startTask,
+  TASK_NAME,
+} from "./task.ts";
 
-const USAGE = `zdeploy-agent ${AGENT_VERSION}
+const USAGE = `zeploy-agent ${AGENT_VERSION}
 
   setup --server <ip[:port]> --token <team token>
         Install on this PC: copy to Program Files, save the settings and start
@@ -29,8 +37,12 @@ const USAGE = `zdeploy-agent ${AGENT_VERSION}
         Stop the agent and remove its Scheduled Task (administrator terminal).
 `;
 
-// Same folder packages/core uses for receipts.
-const stateDir = process.env["ZDEPLOY_HOME"] ?? join(process.env["LOCALAPPDATA"] ?? process.cwd(), "zdeploy");
+// Same folder packages/core uses for receipts. An agent from before the
+// rename to "zeploy" kept it under "zdeploy"; it moves over on first start.
+const localAppData = process.env["LOCALAPPDATA"] ?? process.cwd();
+const legacyStateDir = join(localAppData, "zdeploy");
+const stateDir = process.env["ZEPLOY_HOME"] ?? join(localAppData, "zeploy");
+if (!process.env["ZEPLOY_HOME"]) migrateLegacyDir(legacyStateDir, stateDir);
 const logFile = join(stateDir, "agent.log");
 const pidFile = join(stateDir, "agent.pid");
 
@@ -50,9 +62,9 @@ function makeLogger(): (line: string) => void {
   };
 }
 
-function runningPid(): number | null {
+function runningPid(file = pidFile): number | null {
   try {
-    const pid = Number(readFileSync(pidFile, "utf8"));
+    const pid = Number(readFileSync(file, "utf8"));
     if (!pid || pid === process.pid) return null;
     process.kill(pid, 0);
     return pid;
@@ -92,14 +104,14 @@ async function checkServer(serverUrl: string): Promise<void> {
 async function cmdRun(values: { server?: string; token?: string }): Promise<void> {
   const config = await configured(values);
   if (!config.serverUrl || !config.token) {
-    throw new Error(`not configured; run: zdeploy-agent configure --server <ip> --token <team token>`);
+    throw new Error(`not configured; run: zeploy-agent configure --server <ip> --token <team token>`);
   }
   const other = runningPid();
   if (other) throw new Error(`another agent is already running (pid ${other})`);
   const log = makeLogger();
   writeFileSync(pidFile, String(process.pid));
 
-  log(`zdeploy-agent ${AGENT_VERSION} starting, server ${config.serverUrl}`);
+  log(`zeploy-agent ${AGENT_VERSION} starting, server ${config.serverUrl}`);
   const agent = startAgent({ serverUrl: config.serverUrl, token: config.token, agentId: config.agentId!, log });
   const shutdown = () => {
     log("stopping");
@@ -116,9 +128,28 @@ async function cmdRun(values: { server?: string; token?: string }): Promise<void
   process.on("unhandledRejection", (err) => log(`unhandled: ${(err as Error)?.stack ?? String(err)}`));
 }
 
+// An agent installed before the rename to "zeploy" ran as "zdeploy": its own
+// Scheduled Task, process and Program Files folder. Its settings and records
+// were already moved over by migrateLegacyDir; this removes the rest so the
+// PC does not run two agents.
+async function removeLegacyInstall(): Promise<void> {
+  if (await removeTask(LEGACY_TASK_NAME)) console.log(`Removed the old "${LEGACY_TASK_NAME}" task.`);
+  const pid = runningPid(join(legacyStateDir, "agent.pid"));
+  if (pid) await run("taskkill", ["/F", "/PID", String(pid)]);
+  const legacyDir = legacyExeDir();
+  if (existsSync(legacyDir)) {
+    try {
+      await rm(legacyDir, { recursive: true, force: true });
+      console.log(`Removed ${legacyDir}`);
+    } catch {
+      console.log(`Could not remove ${legacyDir}; delete it after restarting this PC.`);
+    }
+  }
+}
+
 async function cmdSetup(values: { server?: string; token?: string }): Promise<void> {
   if (!values.server || !values.token) throw new Error("setup needs --server and --token");
-  if (!isSea()) throw new Error("setup must be run from the built zdeploy-agent.exe (npm run build:agent)");
+  if (!isSea()) throw new Error("setup must be run from the built zeploy-agent.exe (npm run build:agent)");
   if (!(await isElevated())) throw new Error("setup must be run from an administrator terminal");
 
   const serverUrl = normalizeServerUrl(values.server);
@@ -132,6 +163,7 @@ async function cmdSetup(values: { server?: string; token?: string }): Promise<vo
     await mkdir(dirname(target), { recursive: true });
     await copyFile(process.execPath, target);
   }
+  await removeLegacyInstall();
   await registerTask(target);
   await startTask();
   console.log(`Installed ${target}`);

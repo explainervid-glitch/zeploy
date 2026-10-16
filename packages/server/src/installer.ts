@@ -1,5 +1,5 @@
-// The one-click installer for team PCs: "Install zdeploy agent.cmd", saved
-// next to a copy of zdeploy-agent.exe. Double-clicking it on a team PC
+// The one-click installer for team PCs: "Install zeploy agent.cmd", saved
+// next to a copy of zeploy-agent.exe. Double-clicking it on a team PC
 // installs the agent with one UAC prompt, so nobody types a command into an
 // administrator terminal.
 //
@@ -7,15 +7,15 @@
 // local administrator (the agent is set up for whoever approves the prompt),
 // copies itself and the exe to %TEMP% because an elevated process cannot see
 // mapped drives such as Z:, and asks for elevation. Then, elevated, from that
-// local copy: it runs `zdeploy-agent.exe setup` with the server and token
+// local copy: it runs `zeploy-agent.exe setup` with the server and token
 // written into the file.
 
 import { copyFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { HttpError } from "./packages.ts";
 
-export const INSTALLER_NAME = "Install zdeploy agent.cmd";
-export const AGENT_EXE_NAME = "zdeploy-agent.exe";
+export const INSTALLER_NAME = "Install zeploy agent.cmd";
+export const AGENT_EXE_NAME = "zeploy-agent.exe";
 
 // Both values are written into a batch file unquoted, so only characters
 // with no meaning to cmd.exe are allowed. Team tokens are base64url.
@@ -35,7 +35,7 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "@echo off",
     "setlocal EnableExtensions DisableDelayedExpansion",
     "rem ==================================================================",
-    "rem  zdeploy agent installer, made by the zdeploy admin app.",
+    "rem  zeploy agent installer, made by the zeploy admin app.",
     `rem  Admin server: ${server}    Made: ${stamp(generatedAt)}`,
     "rem",
     "rem  This file contains the team token. Keep it where only the team",
@@ -43,13 +43,13 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "rem ==================================================================",
     `set "ZD_SERVER=${server}"`,
     `set "ZD_TOKEN=${token}"`,
-    "title zdeploy agent installer",
+    "title zeploy agent installer",
     'if /i "%~1"=="elevated" goto elevated',
     "",
     "rem ---- Run 1, as the signed-in user ----------------------------------",
     "rem Paths and names are only printed outside ( ) blocks and in quotes:",
     "rem a ) or & in them would otherwise end the block or split the line.",
-    'set "ZD_EXE=%~dp0zdeploy-agent.exe"',
+    'set "ZD_EXE=%~dp0zeploy-agent.exe"',
     'if not exist "%ZD_EXE%" goto noexe',
     "",
     "rem The agent is set up for the account that approves the Windows prompt,",
@@ -59,13 +59,13 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "",
     "rem An elevated window cannot see mapped drives such as Z:, so this file",
     "rem and the agent are copied to a local folder before asking for rights.",
-    'set "ZD_STAGE=%TEMP%\\zdeploy-agent-setup"',
+    'set "ZD_STAGE=%TEMP%\\zeploy-agent-setup"',
     'if exist "%ZD_STAGE%" rmdir /s /q "%ZD_STAGE%"',
     'mkdir "%ZD_STAGE%" || goto copyfailed',
-    'copy /y "%ZD_EXE%" "%ZD_STAGE%\\zdeploy-agent.exe" >nul || goto copyfailed',
+    'copy /y "%ZD_EXE%" "%ZD_STAGE%\\zeploy-agent.exe" >nul || goto copyfailed',
     'copy /y "%~f0" "%ZD_STAGE%\\install.cmd" >nul || goto copyfailed',
     "",
-    "echo Windows will ask whether zdeploy agent may make changes. Choose Yes.",
+    "echo Windows will ask whether zeploy agent may make changes. Choose Yes.",
     "powershell -NoProfile -ExecutionPolicy Bypass -Command " +
       "\"try { $p = Start-Process -FilePath (Join-Path $env:ZD_STAGE 'install.cmd') -ArgumentList 'elevated' " +
       "-Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }\"",
@@ -78,7 +78,7 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "exit /b %ZD_RESULT%",
     "",
     ":noexe",
-    "echo zdeploy-agent.exe was not found next to this file, in",
+    "echo zeploy-agent.exe was not found next to this file, in",
     'echo   "%~dp0"',
     "echo Keep both files in the same folder and try again.",
     "pause",
@@ -97,7 +97,7 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "",
     "rem ---- Run 2, elevated, from the local copy --------------------------",
     ":elevated",
-    '"%~dp0zdeploy-agent.exe" setup --server %ZD_SERVER% --token %ZD_TOKEN%',
+    '"%~dp0zeploy-agent.exe" setup --server %ZD_SERVER% --token %ZD_TOKEN%',
     "if errorlevel 1 (",
     "  echo.",
     "  echo Setup did not finish. Read the message above, then close this window.",
@@ -105,7 +105,7 @@ export function renderInstallerCmd(server: string, token: string, generatedAt = 
     "  exit /b 1",
     ")",
     "echo.",
-    "echo The zdeploy agent is installed and running. This window closes in 10 seconds.",
+    "echo The zeploy agent is installed and running. This window closes in 10 seconds.",
     "timeout /t 10 >nul",
     "exit /b 0",
   ];
@@ -125,7 +125,7 @@ export async function writeInstaller(
 ): Promise<SavedInstaller> {
   const agent = options.agentExe;
   if (!agent || !(await stat(agent).catch(() => null))?.isFile()) {
-    throw new HttpError(409, "zdeploy-agent.exe is not built yet; run npm run build:agent, then npm run admin");
+    throw new HttpError(409, "zeploy-agent.exe is not built yet; run npm run build:agent, then npm run admin");
   }
   if (!(await stat(folder).catch(() => null))?.isDirectory()) {
     throw new HttpError(400, `folder not found: ${folder}`);

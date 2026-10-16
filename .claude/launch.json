@@ -2,13 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "zdeploy-admin-test",
+      "name": "zeploy-admin-test",
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "packages/server/src/main.ts",
         "--host", "127.0.0.1",
         "--port", "7421",
-        "--data", ".zdeploy-test/admin-data"
+        "--data", ".zeploy-test/admin-data"
       ],
       "port": 7421
     }

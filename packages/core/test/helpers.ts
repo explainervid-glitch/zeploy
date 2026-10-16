@@ -8,7 +8,7 @@ import { strToU8, zipSync } from "fflate";
 import type { Environment } from "../src/index.ts";
 
 export async function makeTmp(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "zdeploy-test-"));
+  return mkdtemp(join(tmpdir(), "zeploy-test-"));
 }
 
 export async function write(path: string, content: string | Uint8Array = ""): Promise<void> {
@@ -67,7 +67,7 @@ export function blenderExtensionZip(id: string, min = "4.2.0", max?: string): Ui
     'version = "1.0.0"',
     `name = "${id}"`,
     'tagline = "Test extension"',
-    'maintainer = "zdeploy"',
+    'maintainer = "zeploy"',
     'type = "add-on"',
     `blender_version_min = "${min}"`,
     ...(max ? [`blender_version_max = "${max}"`] : []),

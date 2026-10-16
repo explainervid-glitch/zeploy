@@ -1,0 +1,23 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Local test server data (holds a team token)
+.zdeploy-test/
+
+# A saved agent installer holds the team token: never commit one
+Install zdeploy agent.cmd
+zdeploy-agent.exe
+
+# Archify visual-check evidence (screenshots and receipts)
+docs/*.visual-check.*
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# Logs and OS litter
+*.log
+npm-debug.log*
+Thumbs.db
+desktop.ini
+.DS_Store

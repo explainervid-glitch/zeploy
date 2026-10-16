@@ -1,0 +1,71 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Alur kerja zdeploy",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "frontend": { "label": "Langkah admin" },
+        "backend": { "label": "Proses otomatis" },
+        "security": { "label": "Titik keamanan" },
+        "messagebus": { "label": "Antrean" },
+        "database": { "label": "Penyimpanan" },
+        "external": { "label": "Kondisi luar" }
+      }
+    },
+    "views": [
+      { "id": "tambah-paket", "label": "Menambah paket", "focus": ["prepare", "import", "repo"], "note": "Folder plugin + zdeploy.json divalidasi, di-zip, dan disimpan dengan SHA-256." },
+      { "id": "push-ke-pc", "label": "Push ke PC tim", "focus": ["select", "queue", "dispatch", "download", "plan", "install"], "note": "Admin memilih sel di matriks; server mengirim job bertanda HMAC; agent memasang lewat packages/core." },
+      { "id": "laporan", "label": "Hasil kembali ke admin", "focus": ["install", "report", "matrix"], "note": "Agent mengirim jobDone dan daftar receipt; matriks di admin app diperbarui lewat SSE." },
+      { "id": "pengaman", "label": "Pengaman", "focus": ["dispatch", "download", "plan"], "note": "Token tim tidak dikirim; job bertanda HMAC; unduhan dicek SHA-256; dev link tidak pernah dihapus menembus." },
+      { "id": "saat-gagal", "label": "Menunggu dan gagal", "focus": ["queue", "offline", "plan", "fail", "report"], "note": "PC mati membuat job antre; app terbuka atau dev link membuat job gagal dengan alasan jelas." }
+    ]
+  },
+  "lanes": [
+    { "id": "admin", "label": "Komputer admin (zdeploy-admin)" },
+    { "id": "server", "label": "Server admin (port 7420)" },
+    { "id": "agent", "label": "Agent di PC tim" },
+    { "id": "exceptions", "label": "Menunggu / gagal", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "siapkan", "label": "Siapkan paket", "fromCol": 0, "toCol": 1 },
+    { "id": "kirim", "label": "Kirim job", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "pasang", "label": "Pasang + lapor", "fromCol": 4, "toCol": 5 }
+  ],
+  "groups": [
+    { "id": "core_engine", "label": "packages/core", "lane": "agent", "fromCol": 4, "toCol": 5, "variant": "emphasis" }
+  ],
+  "mainPath": ["prepare", "import", "select", "queue", "dispatch", "download", "plan", "install", "report", "matrix"],
+  "nodes": [
+    { "id": "prepare", "lane": "admin", "col": 0, "width": 132, "type": "frontend", "label": "Folder plugin", "sublabel": "berisi zdeploy.json" },
+    { "id": "import", "lane": "admin", "col": 1, "width": 132, "type": "frontend", "label": "Tambah paket", "sublabel": "folder atau .zip" },
+    { "id": "select", "lane": "admin", "col": 2, "width": 132, "type": "frontend", "label": "Pilih sel matriks", "sublabel": "lalu klik Pasang" },
+    { "id": "matrix", "lane": "admin", "col": 5, "width": 132, "type": "frontend", "label": "Matriks diperbarui", "sublabel": "status per PC" },
+    { "id": "repo", "lane": "server", "col": 1, "width": 132, "type": "database", "label": "Repositori paket", "sublabel": "zip + SHA-256", "tag": "state.json" },
+    { "id": "queue", "lane": "server", "col": 2, "width": 132, "type": "messagebus", "label": "Antrean job", "sublabel": "satu job per PC" },
+    { "id": "dispatch", "lane": "server", "col": 3, "width": 132, "type": "security", "label": "Kirim job", "sublabel": "bertanda HMAC", "tag": "WebSocket" },
+    { "id": "report", "lane": "server", "col": 5, "width": 132, "type": "backend", "label": "Status + receipt", "sublabel": "log job tersimpan" },
+    { "id": "download", "lane": "agent", "col": 3, "width": 132, "type": "security", "label": "Unduh paket", "sublabel": "cek SHA-256" },
+    { "id": "plan", "lane": "agent", "col": 4, "width": 132, "type": "backend", "label": "Cek aman", "sublabel": "app & dev link" },
+    { "id": "install", "lane": "agent", "col": 5, "width": 132, "type": "backend", "label": "Pasang", "sublabel": "CEP/JSX/JSFL/Blender", "tag": "receipt" },
+    { "id": "offline", "lane": "exceptions", "col": 2, "width": 132, "type": "external", "label": "PC mati", "sublabel": "job menunggu" },
+    { "id": "fail", "lane": "exceptions", "col": 4, "width": 132, "type": "security", "label": "Job gagal", "sublabel": "tanpa perubahan" }
+  ],
+  "edges": [
+    { "from": "prepare", "to": "import" },
+    { "from": "import", "to": "repo", "label": "validasi", "role": "branch" },
+    { "from": "import", "to": "select" },
+    { "from": "select", "to": "queue", "label": "POST /api/jobs", "variant": "emphasis" },
+    { "from": "queue", "to": "dispatch" },
+    { "from": "dispatch", "to": "download", "label": "job + link", "variant": "emphasis" },
+    { "from": "download", "to": "plan" },
+    { "from": "plan", "to": "install" },
+    { "from": "install", "to": "report", "label": "jobDone", "variant": "emphasis" },
+    { "from": "report", "to": "matrix", "label": "SSE" },
+    { "from": "queue", "to": "offline", "label": "agent offline", "role": "branch", "variant": "dashed" },
+    { "from": "offline", "to": "dispatch", "label": "tersambung lagi", "role": "return", "variant": "dashed" },
+    { "from": "plan", "to": "fail", "label": "app terbuka / dev link", "role": "error", "variant": "security" },
+    { "from": "fail", "to": "report", "label": "lapor gagal", "role": "error", "variant": "security" }
+  ]
+}

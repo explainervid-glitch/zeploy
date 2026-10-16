@@ -1,0 +1,134 @@
+// Builds the deliverables:
+//   node scripts/build.mjs admin [--launch]
+//       dist/admin (the app files) and a runnable copy with the Electron
+//       runtime at %LOCALAPPDATA%\Programs\zdeploy-admin\zdeploy-admin.exe
+//   node scripts/build.mjs agent
+//       dist/agent/zdeploy-agent.exe (Node single executable)
+//
+// The sources are TypeScript run directly by Node during development; esbuild
+// bundles them into one CommonJS file for Electron and for the Node SEA blob.
+//
+// Electron cannot start from a network share: Chromium's sandboxed GPU and
+// renderer processes fail to launch from a mapped drive such as Z:. That is
+// why the runnable admin app is assembled on a local disk.
+
+import { execFileSync, spawn } from "node:child_process";
+import { copyFile, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const r = (...p) => join(root, ...p);
+const version = "0.2.0";
+const adminInstallDir =
+  process.env.ZDEPLOY_ADMIN_OUT ?? join(process.env.LOCALAPPDATA ?? root, "Programs", "zdeploy-admin");
+
+async function readText(path) {
+  return readFile(path, "utf8").catch(() => null);
+}
+
+// Copies the Electron runtime (only when its version changed) and the app
+// files into adminInstallDir, with electron.exe renamed to zdeploy-admin.exe.
+async function assembleAdmin(appDir) {
+  const electronDist = r("node_modules", "electron", "dist");
+  const electronVersion = await readText(join(electronDist, "version"));
+  if (!electronVersion) throw new Error("Electron runtime missing; run: npm run setup:electron");
+  if ((await readText(join(adminInstallDir, "version"))) !== electronVersion) {
+    console.log(`copying Electron ${electronVersion.trim()} to ${adminInstallDir}`);
+    await rm(adminInstallDir, { recursive: true, force: true });
+    await cp(electronDist, adminInstallDir, {
+      recursive: true,
+      filter: (src) => basename(src).toLowerCase() !== "electron.exe" || src === electronDist,
+    });
+    await copyFile(join(electronDist, "electron.exe"), join(adminInstallDir, "zdeploy-admin.exe"));
+  }
+  const resourcesApp = join(adminInstallDir, "resources", "app");
+  await rm(resourcesApp, { recursive: true, force: true });
+  await cp(appDir, resourcesApp, { recursive: true });
+  const exe = join(adminInstallDir, "zdeploy-admin.exe");
+  console.log(`admin app ready: ${exe}`);
+  return exe;
+}
+
+async function buildAdmin() {
+  const out = r("dist", "admin");
+  await rm(out, { recursive: true, force: true });
+  await build({
+    entryPoints: [r("packages", "admin", "src", "main.ts")],
+    outfile: join(out, "main.cjs"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    // ws loads these native speed-ups only if present.
+    external: ["electron", "bufferutil", "utf-8-validate"],
+    logLevel: "warning",
+  });
+  await cp(r("packages", "server", "ui"), join(out, "ui"), { recursive: true });
+  await copyFile(r("packages", "admin", "preload.cjs"), join(out, "preload.cjs"));
+  // The admin app hands this exe out with the one-click installer.
+  const agentExe = r("dist", "agent", "zdeploy-agent.exe");
+  if (await stat(agentExe).then(() => true, () => false)) {
+    await mkdir(join(out, "agent"), { recursive: true });
+    await copyFile(agentExe, join(out, "agent", "zdeploy-agent.exe"));
+  } else {
+    console.warn("dist/agent/zdeploy-agent.exe not found: run npm run build:agent first, or the admin app cannot save installers");
+  }
+  await writeFile(
+    join(out, "package.json"),
+    JSON.stringify({ name: "zdeploy-admin", productName: "zdeploy", version, main: "main.cjs" }, null, 2),
+  );
+  console.log(`built ${out}`);
+  const exe = await assembleAdmin(out);
+  if (process.argv.includes("--launch")) {
+    spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+  }
+}
+
+async function buildAgent() {
+  const out = r("dist", "agent");
+  await rm(out, { recursive: true, force: true });
+  await mkdir(out, { recursive: true });
+  const bundle = join(out, "agent.cjs");
+  await build({
+    entryPoints: [r("packages", "agent", "src", "main.ts")],
+    outfile: bundle,
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    logLevel: "warning",
+  });
+
+  // Node single executable application: node.exe with the bundle injected.
+  const blob = join(out, "sea-prep.blob");
+  const seaConfig = join(out, "sea-config.json");
+  await writeFile(
+    seaConfig,
+    JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true }, null, 2),
+  );
+  execFileSync(process.execPath, ["--experimental-sea-config", seaConfig], { stdio: "inherit" });
+  const exe = join(out, "zdeploy-agent.exe");
+  await copyFile(process.execPath, exe);
+  execFileSync(
+    process.execPath,
+    [
+      r("node_modules", "postject", "dist", "cli.js"),
+      exe,
+      "NODE_SEA_BLOB",
+      blob,
+      "--sentinel-fuse",
+      "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2",
+    ],
+    { stdio: "inherit" },
+  );
+  await rm(blob);
+  await rm(seaConfig);
+  console.log(`built ${exe}`);
+}
+
+// The agent first: the admin app bundles it.
+const target = process.argv[2] ?? "all";
+if (target === "agent" || target === "all") await buildAgent();
+if (target === "admin" || target === "all") await buildAdmin();

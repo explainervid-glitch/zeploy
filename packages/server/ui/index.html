@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="admin-token" content="%%ADMIN_TOKEN%%">
+  <title>zdeploy</title>
+  <!-- Google Sans from Google Fonts; without internet the UI falls back to Segoe UI. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">zdeploy</h1>
+    <div class="server" id="server-info" aria-live="polite"></div>
+    <div class="topbar-actions">
+      <button type="button" id="connect-pc">Connect a PC</button>
+      <button type="button" id="add-package" class="primary">Add package</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <section class="matrix-wrap" aria-labelledby="matrix-title">
+      <h2 id="matrix-title" class="visually-hidden">PCs and packages</h2>
+      <div id="matrix" class="matrix"></div>
+    </section>
+
+    <section id="actionbar" class="actionbar" hidden aria-live="polite">
+      <p id="selection-summary" class="selection-summary"></p>
+      <div class="action-options">
+        <label>If the app is open
+          <select id="if-running">
+            <option value="fail">Stop and tell me</option>
+            <option value="kill">Close the app (unsaved work is lost)</option>
+            <option value="ignore">Install anyway, restart later</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="replace-dev-links"> Replace developer links</label>
+      </div>
+      <div class="action-buttons">
+        <button type="button" id="clear-selection">Clear selection</button>
+        <button type="button" id="do-uninstall">Remove from PCs</button>
+        <button type="button" id="do-install" class="primary">Install</button>
+      </div>
+    </section>
+
+    <section class="activity" aria-labelledby="activity-title">
+      <h2 id="activity-title">Activity</h2>
+      <ol id="jobs" class="jobs"></ol>
+    </section>
+  </main>
+
+  <dialog id="add-dialog">
+    <form method="dialog" id="add-form">
+      <h2>Add package</h2>
+      <p class="hint">Pick a folder that contains <code>zdeploy.json</code>, or a <code>.zip</code> made by <code>zdeploy pack</code>. You can also drag a .zip onto this window.</p>
+      <label for="add-path">Folder or .zip path</label>
+      <div class="path-row">
+        <input id="add-path" name="path" type="text" spellcheck="false" autocomplete="off"
+               placeholder="Z:\DEVELOPMENT NEW STYLE\...\colosave-plugin">
+        <button type="button" id="pick-folder" hidden>Choose folder…</button>
+      </div>
+      <p id="add-error" class="error" role="alert" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="add-cancel">Cancel</button>
+        <button type="submit" id="add-submit" class="primary">Add to repository</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="connect-dialog">
+    <form method="dialog">
+      <h2>Connect a team PC</h2>
+      <p class="hint">Install the agent once per PC. After that it starts hidden every time the PC's user signs in.</p>
+      <label id="setup-address-row" class="address-row" hidden>Address team PCs use to reach this computer
+        <select id="setup-address"></select>
+      </label>
+
+      <h3>With the installer</h3>
+      <ol class="steps">
+        <li>Save the installer to a folder the team PC can open, such as a folder on the file share.
+          <div class="path-row">
+            <input id="installer-folder" type="text" spellcheck="false" autocomplete="off"
+                   aria-label="Folder to save the installer in" placeholder="\\192.168.1.204\FileProject\zdeploy">
+            <button type="button" id="pick-installer-folder" hidden>Choose folder…</button>
+            <button type="button" id="save-installer" class="primary">Save installer</button>
+          </div>
+          <p id="installer-result" class="hint" role="status" hidden></p>
+          <p id="installer-error" class="error" role="alert" hidden></p>
+        </li>
+        <li>On the team PC, sign in as the person who uses it. They must be a local administrator. Double-click <code>Install zdeploy agent.cmd</code> and choose Yes when Windows asks.</li>
+        <li>The PC appears here within a few seconds.</li>
+      </ol>
+      <p class="hint">The installer contains the team token. Save it where only the team can open it, and delete it once the PCs are set up.</p>
+
+      <details>
+        <summary>Set up with a command instead</summary>
+        <ol class="steps">
+          <li>Copy <code>zdeploy-agent.exe</code> to a local folder on that PC, such as Downloads. Don't run it from a network drive: an administrator terminal can't see drives like <code>Z:</code>.</li>
+          <li>Sign in as the person who uses that PC (they must be a local administrator). Open PowerShell with "Run as administrator", go to that folder, and run:
+            <pre id="setup-command" class="command"></pre>
+            <button type="button" id="copy-setup">Copy command</button>
+          </li>
+        </ol>
+      </details>
+
+      <p class="hint">If the PC doesn't appear, allow port <span id="port-hint"></span> in this computer's Windows Firewall for Private networks.</p>
+      <div class="dialog-buttons">
+        <button value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rename-dialog">
+    <form method="dialog" id="rename-form">
+      <h2>Rename PC</h2>
+      <p class="hint" id="rename-hint"></p>
+      <label for="rename-input">Name in zdeploy</label>
+      <input id="rename-input" type="text" maxlength="60" spellcheck="false" autocomplete="off">
+      <p id="rename-error" class="error" role="alert" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="rename-reset" class="push-left">Use Windows name</button>
+        <button type="button" id="rename-cancel">Cancel</button>
+        <button type="submit" class="primary">Save name</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

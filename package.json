@@ -1,0 +1,35 @@
+{
+  "name": "zdeploy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deploy After Effects, Premiere Pro, Animate and Blender plugins to the team's PCs over the LAN.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "zdeploy": "node packages/cli/src/cli.ts",
+    "server": "node packages/server/src/main.ts",
+    "agent": "node packages/agent/src/main.ts",
+    "admin": "node scripts/build.mjs admin --launch",
+    "build": "node scripts/build.mjs all",
+    "build:admin": "node scripts/build.mjs admin",
+    "build:agent": "node scripts/build.mjs agent",
+    "setup:electron": "node node_modules/electron/install.js",
+    "test": "node --test \"packages/*/test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "ws": "^8.22.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.2",
+    "electron": "^44.7.2",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
+    "typescript": "^5.9.3"
+  }
+}

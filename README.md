@@ -430,7 +430,9 @@ the folder's path.
 
 To try zeploy on the team PCs first, add `examples\test-panel`: a do-nothing
 After Effects panel (`com.zeploy.testpanel`) that is safe to install and
-remove, and that leaves the registry alone.
+remove, and that leaves the registry alone. It is at version 1.1.0; to try
+an update, raise `version` in its `zeploy.json` and `ExtensionBundleVersion`
+in `panel\CSXS\manifest.xml`, then add it again.
 
 The admin app checks the package, zips it and stores it with its SHA-256. Each
 version can be added once. If the content changed, raise the version (in the
@@ -463,7 +465,8 @@ before you add a package.
      restarts it to load the new version.
 3. Tick **Replace developer links** only for PCs where a developer link should
    be replaced by a normal installed copy.
-4. Click **Install**.
+4. Click the green button. It says what it does: **Install N**, **Update N**,
+   **Reinstall N**, or **Apply N** for a mix.
 
 Updating is the same: add the new version, then install it on the PCs that
 show ◇. Files the old version installed and the new one does not are removed.
@@ -473,15 +476,19 @@ is queued; open it under **Activity** to cancel it.
 
 ### Remove from PCs
 
-Select the cells and click **Remove from PCs**, then confirm. The agent removes exactly what
-zeploy installed, using its record of the install. Cells where the package is
-not installed are skipped.
+Click the cells of the PCs to remove a plugin from (a filled ◆ or ◇ means it
+is installed there). The side panel then shows a red **Remove N from PCs**,
+where N counts the selected cells that have the plugin; the others are
+skipped. Click it and confirm. The agent removes exactly what zeploy
+installed, using its record of the install. Plugins zeploy did not install
+are never touched.
 
 ### Update the agents
 
 When the admin app holds a newer `zeploy-agent.exe` than a PC runs (after a
-rebuild with a higher version), that PC's row shows its agent version, such as
-"Agent 0.3.0", in orange.
+rebuild with a higher version), that PC's row shows its agent version in
+amber, such as "^Agent 0.3.0". It is a notice, not an error: installs and
+removals on that PC keep working.
 
 - **Update N agents to x.y.z** (above the table) updates every PC that can.
 - **Update agent** (next to a PC's name) updates one PC.
@@ -494,9 +501,36 @@ connects, and the old one exits. Jobs never stop in between. If the new agent
 does not connect within a minute, the old exe goes back, the old agent keeps
 running and the job fails.
 
-Agents before 0.3.0 cannot update themselves: their row says so when you
-hover over the version. Save the installer under **Connect PC** and run it on
-those PCs once. From then on they update from the admin app.
+#### A PC shows "Agent 0.2.0" and has no Update agent
+
+Self-update arrived in 0.3.0, so an agent on 0.2.0 cannot update itself.
+Hovering over the tag says so. Update each such PC once by hand:
+
+1. Make sure the admin app holds the new agent. After pulling or changing
+   the agent, rebuild and restart the admin app:
+
+   ```bash
+   npm run build
+   ```
+
+   ```bash
+   npm run admin
+   ```
+
+   Otherwise the installer you save still carries the old exe.
+2. Open **Connect PC** (or press `c`) and **Save** the installer to the shared
+   folder. This writes a fresh `Install zeploy agent.cmd` and
+   `zeploy-agent.exe`.
+3. On each PC with the tag, double-click `Install zeploy agent.cmd` and
+   choose **Yes** in the Windows prompt.
+
+Setup stops the old agent, replaces the exe in `C:\Program Files\zeploy` and
+starts the new one. It keeps the PC id, so the row, its name in zeploy and the
+install records stay, and installed plugins are left alone. The tag goes away
+when the agent reconnects. From then on the PC updates from the admin app.
+
+Delete the installer from the shared folder afterwards: it holds the team
+token.
 
 ### Other actions
 
@@ -566,6 +600,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | The admin app says `The admin server could not start` | Another admin app or `npm run server` is using port 7420. Close it |
 | The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe` |
 | `electron.exe` is missing after `npm install` | Run `npm run setup:electron` |
+| A PC shows "Agent 0.2.0" and no **Update agent** | Its agent predates self-update. Run the installer on it once: see [A PC shows "Agent 0.2.0"](#a-pc-shows-agent-020-and-has-no-update-agent) |
 | The UI shows Consolas instead of JetBrains Mono | The admin PC has no internet; the font comes from Google Fonts. Install JetBrains Mono on that PC, or ignore it: everything else works |
 
 ## 6. Reference

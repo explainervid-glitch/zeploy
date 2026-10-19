@@ -399,8 +399,15 @@ function renderChanges() {
   const help = RUN_OPTIONS.find((o) => o.id === runMode).help;
   $("if-running-help").textContent = help;
   $("if-running-help").hidden = !help;
-  $("do-install").textContent = `Apply ${changes.length}`;
-  $("do-uninstall").disabled = !changes.some((c) => c.installed);
+  const verbs = new Set(changes.map((c) => c.verb));
+  const only = verbs.size === 1 ? [...verbs][0] : "Apply";
+  $("do-install").textContent = `${only} ${changes.length}`;
+  // Remove only acts on cells where the plugin is installed.
+  const installed = changes.filter((c) => c.installed).length;
+  const remove = $("do-uninstall");
+  remove.hidden = installed === 0;
+  remove.textContent = `Remove ${installed} from PCs`;
+  remove.title = `Uninstall from the selected PCs that have it${installed < changes.length ? `; ${changes.length - installed} not installed are skipped` : ""}`;
 }
 
 function jobTitle(job, names) {

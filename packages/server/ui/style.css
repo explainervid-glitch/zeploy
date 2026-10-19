@@ -361,7 +361,7 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .check input::before { content: "[ ]"; }
 .check input:checked::before { content: "[x]"; color: var(--accent); font-weight: 700; }
 .check input:focus-visible { outline: 1px solid var(--accent); }
-.apply-row { margin-top: auto; display: flex; gap: 6px; }
+.apply-row { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 
 .jobs { list-style: none; margin: 0; padding: 0; }
 .jobs .empty-line { padding: 14px 16px; }

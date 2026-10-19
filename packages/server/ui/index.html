@@ -5,18 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="admin-token" content="%%ADMIN_TOKEN%%">
   <title>zeploy</title>
-  <!-- Google Sans from Google Fonts; without internet the UI falls back to Segoe UI. -->
+  <!-- JetBrains Mono from Google Fonts, or an installed copy; without either
+       the UI falls back to Cascadia Mono or Consolas. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Google+Sans+Code:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1 class="brand">
-      <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true"><rect x="4" y="4" width="10" height="10" rx="1.5" transform="rotate(45 9 9)" fill="currentColor"></rect></svg>
-      zeploy
-    </h1>
+    <h1 class="brand"><span class="prompt" aria-hidden="true">&gt;_</span> zeploy</h1>
     <span id="online" class="online" aria-live="polite"></span>
     <button type="button" id="connect-pc" class="btn ghost">Connect PC</button>
     <button type="button" id="add-package" class="btn primary">Add package</button>
@@ -180,6 +178,30 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="confirm-dialog" class="sheet narrow" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+    <form method="dialog">
+      <div class="sheet-head">
+        <h2 id="confirm-title"></h2>
+      </div>
+      <div class="sheet-body">
+        <p id="confirm-body" class="confirm-body"></p>
+      </div>
+      <div class="sheet-foot">
+        <button value="cancel" class="btn ghost" autofocus>Cancel</button>
+        <button value="ok" id="confirm-ok" class="btn danger"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer class="statusbar" aria-label="Keyboard shortcuts">
+    <span><kbd>a</kbd> add package</span>
+    <span><kbd>c</kbd> connect PC</span>
+    <span><kbd>1</kbd> changes</span>
+    <span><kbd>2</kbd> activity</span>
+    <span><kbd>esc</kbd> close</span>
+    <span id="status-server" class="status-server"></span>
+  </footer>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

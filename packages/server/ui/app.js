@@ -108,6 +108,20 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+// Asks before something that cannot be undone. Cancel has the focus, so
+// Enter or Esc never removes anything by accident.
+function askConfirm({ title, body, action }) {
+  const dialog = $("confirm-dialog");
+  $("confirm-title").textContent = title;
+  $("confirm-body").textContent = body;
+  $("confirm-ok").textContent = action;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true });
+  });
+}
+
 function toast(message, isError = false) {
   const el = $("toast");
   el.textContent = message;
@@ -231,6 +245,9 @@ function renderTop() {
   el.title = state.addresses.length
     ? `Server ${state.addresses.map((a) => `${a}:${state.port}`).join(", ")}`
     : "This computer has no network address";
+  $("status-server").textContent = state.addresses.length
+    ? `listening ${state.addresses[0]}:${state.port}`
+    : `listening :${state.port}, no network`;
 }
 
 function renderFilters() {
@@ -530,6 +547,17 @@ async function runAction(action) {
     }
     if (!groups.has(c.pkg.id)) groups.set(c.pkg.id, { pkg: c.pkg, agentIds: [] });
     groups.get(c.pkg.id).agentIds.push(c.agent.id);
+  }
+  if (action === "uninstall" && groups.size) {
+    const names = new Map(state.agents.map((a) => [a.id, nameOf(a)]));
+    const pcCount = new Set([...groups.values()].flatMap((g) => g.agentIds)).size;
+    const lines = [...groups.values()].map((g) => `${g.pkg.name} from ${listText(g.agentIds.map((id) => names.get(id)))}`);
+    const ok = await askConfirm({
+      title: `Remove from ${pcs(pcCount)}?`,
+      body: `${lines.join("\n")}\n\nzeploy deletes what it installed there. You can install it again later.`,
+      action: "Remove",
+    });
+    if (!ok) return;
   }
   let sent = 0;
   try {
@@ -872,14 +900,26 @@ document.addEventListener("click", async (event) => {
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
     else if (d.close !== undefined) el.closest("dialog")?.close();
     else if (d.forget) {
-      const agent = state.agents.find((a) => a.id === d.forget);
-      if (confirm(`Forget ${agent ? nameOf(agent) : "this PC"}? It comes back when its agent connects again.`)) {
-        await api("DELETE", `/api/agents?id=${encodeURIComponent(d.forget)}`);
-      }
+      const { forget } = d;
+      const agent = state.agents.find((a) => a.id === forget);
+      const ok = await askConfirm({
+        title: `Forget ${agent ? nameOf(agent) : "this PC"}?`,
+        body: "It leaves the table. It comes back when its agent connects again, without the name you gave it.",
+        action: "Forget",
+      });
+      if (ok) await api("DELETE", `/api/agents?id=${encodeURIComponent(forget)}`);
     } else if (d.removePkg) {
-      if (confirm(`Remove ${d.removePkg} ${d.version} from the repository? Plugins already installed on PCs stay installed.`)) {
-        await api("DELETE", `/api/packages?id=${encodeURIComponent(d.removePkg)}&version=${encodeURIComponent(d.version)}`);
-      }
+      const { removePkg: id, version } = d;
+      const pkg = state.packages.find((p) => p.id === id && p.version === version);
+      const installedOn = state.agents.filter((a) => a.state?.receipts.some((r) => r.id === id)).length;
+      const ok = await askConfirm({
+        title: `Delete ${pkg?.name ?? id} ${version}?`,
+        body:
+          `This version leaves the repository, so no PC can install it any more.` +
+          (installedOn ? ` The ${pcs(installedOn)} that have the plugin keep it; use Remove to take it off them.` : ""),
+        action: "Delete",
+      });
+      if (ok) await api("DELETE", `/api/packages?id=${encodeURIComponent(id)}&version=${encodeURIComponent(version)}`);
     }
   } catch (err) {
     toast(err.message, true);
@@ -895,6 +935,21 @@ $("tab-activity").addEventListener("click", () => {
   render();
 });
 $("connect-pc").addEventListener("click", () => state && openConnect());
+
+// Single-key shortcuts, as in a terminal app (listed in the status bar).
+// Never while typing or while a dialog is open.
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+  if (document.querySelector("dialog[open]") || event.target.closest?.("input, textarea, select")) return;
+  const showTab = (name) => () => {
+    tab = name;
+    render();
+  };
+  const act = { a: () => openAdd(), c: () => state && openConnect(), 1: showTab("changes"), 2: showTab("activity") }[event.key];
+  if (!act) return;
+  event.preventDefault();
+  act();
+});
 $("add-package").addEventListener("click", () => openAdd());
 $("do-install").addEventListener("click", () => runAction("install"));
 $("do-uninstall").addEventListener("click", () => runAction("uninstall"));

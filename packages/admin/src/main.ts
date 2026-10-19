@@ -79,7 +79,7 @@ async function boot(): Promise<void> {
     minHeight: 560,
     title: "zeploy",
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#131417" : "#FFFFFF",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0D0F10" : "#F4F2EC",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,

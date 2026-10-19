@@ -473,7 +473,7 @@ is queued; open it under **Activity** to cancel it.
 
 ### Remove from PCs
 
-Select the cells and click **Remove from PCs**. The agent removes exactly what
+Select the cells and click **Remove from PCs**, then confirm. The agent removes exactly what
 zeploy installed, using its record of the install. Cells where the package is
 not installed are skipped.
 
@@ -509,6 +509,9 @@ those PCs once. From then on they update from the admin app.
 - **Forget PC** (on an offline PC) removes it from the table. It comes back
   when its agent connects again.
 - **Copy team token** copies the token agents use to connect.
+- Keys (shown in the status bar): `a` add package, `c` connect PC, `1` changes,
+  `2` activity, `Esc` closes a dialog. Removing plugins from PCs, deleting a
+  package version and forgetting a PC each ask first; Enter cancels.
 
 ## 5. Troubleshooting
 
@@ -563,7 +566,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | The admin app says `The admin server could not start` | Another admin app or `npm run server` is using port 7420. Close it |
 | The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe` |
 | `electron.exe` is missing after `npm install` | Run `npm run setup:electron` |
-| The UI shows Segoe UI instead of Google Sans | The admin PC has no internet; the font comes from Google Fonts. Everything else works |
+| The UI shows Consolas instead of JetBrains Mono | The admin PC has no internet; the font comes from Google Fonts. Install JetBrains Mono on that PC, or ignore it: everything else works |
 
 ## 6. Reference
 

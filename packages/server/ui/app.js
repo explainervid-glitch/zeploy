@@ -190,6 +190,7 @@ function agentApps(agent) {
 
 function agentDetails(agent) {
   return [
+    agent.role ? `Role: ${agent.role}` : "No role",
     agent.label ? `${agent.hostname}, ${agent.address}` : agent.address,
     agent.online ? `Online, user ${agent.user}` : `Offline, last seen ${relTime(agent.lastSeen)}`,
     agentApps(agent),
@@ -214,8 +215,40 @@ function agentUpdate(agent) {
 
 const agentsToUpdate = () => state.agents.filter((a) => agentUpdate(a)?.canUpdate && !agentUpdate(a).job);
 
+// Grouped by role (named roles A to Z, PCs without one last), then online
+// first, then by name.
 function sortedAgents() {
-  return [...state.agents].sort((a, b) => b.online - a.online || nameOf(a).localeCompare(nameOf(b)));
+  const rank = (a) => (a.role ? 0 : 1);
+  return [...state.agents].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      (a.role ?? "").localeCompare(b.role ?? "") ||
+      b.online - a.online ||
+      nameOf(a).localeCompare(nameOf(b)),
+  );
+}
+
+const roles = () => [...new Set(state.agents.map((a) => a.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+// Table rows with a header row above each role, once any PC has a role.
+function rowsByRole(agents, pkgs) {
+  if (!state.agents.some((a) => a.role)) return agents.map((a) => rowHtml(a, pkgs)).join("");
+  let html = "";
+  let current = null;
+  for (const agent of agents) {
+    const role = agent.role ?? "";
+    if (role !== current) {
+      current = role;
+      const members = agents.filter((a) => (a.role ?? "") === role);
+      const online = members.filter((a) => a.online).length;
+      html +=
+        `<tr class="role-row"><th scope="rowgroup" colspan="${pkgs.length + 1}">` +
+        `<span class="role-name">${esc(role || "No role")}</span>` +
+        `<span class="role-count">${pcs(members.length)}, ${online} online</span></th></tr>`;
+    }
+    html += rowHtml(agent, pkgs);
+  }
+  return html;
 }
 
 // A queued job the admin cancelled: the server records it as failed with this error.
@@ -231,6 +264,7 @@ function cellInfo(agent, pkg) {
   let status;
   if (active) status = active.status === "queued" ? "queued" : "busy";
   else if (last?.status === "failed") status = "failed";
+  else if (receipt?.failed?.length && receipt.version === pkg.version) status = "partial";
   else if (receipt) status = compareSemver(receipt.version, pkg.version) >= 0 ? "current" : "old";
   else if (found) status = "found";
   else status = "none";
@@ -290,7 +324,7 @@ function hasStatus(agent, status) {
 
 function matchesFilter(agent) {
   if (filter === "updates") return hasStatus(agent, "old");
-  if (filter === "failed") return hasStatus(agent, "failed");
+  if (filter === "failed") return hasStatus(agent, "failed") || hasStatus(agent, "partial");
   if (filter === "offline") return !agent.online;
   return true;
 }
@@ -322,7 +356,7 @@ function renderFilters() {
   el.hidden = state.agents.length === 0;
   const counts = {
     updates: state.agents.filter((a) => hasStatus(a, "old")).length,
-    failed: state.agents.filter((a) => hasStatus(a, "failed")).length,
+    failed: state.agents.filter((a) => hasStatus(a, "failed") || hasStatus(a, "partial")).length,
     offline: state.agents.filter((a) => !a.online).length,
   };
   el.innerHTML = FILTERS.map((f) => {
@@ -356,7 +390,7 @@ function cellHtml(agent, pkg) {
   const { status, receipt, active, found } = cellInfo(agent, pkg);
   const removing = active?.action === "uninstall";
   const foundCap = found?.version ? `Found ${found.version}` : "Found";
-  const caption = { old: "Update", busy: removing ? "Removing" : "Installing", queued: "Queued", failed: "Failed", found: foundCap }[status] ?? "";
+  const caption = { old: "Update", busy: removing ? "Removing" : "Installing", queued: "Queued", failed: "Failed", found: foundCap, partial: "Partial" }[status] ?? "";
   const words = {
     current: `version ${receipt?.version}, up to date`,
     old: `version ${receipt?.version}, update to ${pkg.version}`,
@@ -365,6 +399,7 @@ function cellHtml(agent, pkg) {
     busy: removing ? "removing" : "installing",
     queued: "queued",
     failed: `last job failed${receipt ? `, version ${receipt.version} installed` : ""}`,
+    partial: `version ${receipt?.version} partly installed: failed in ${(receipt?.failed ?? []).join(", ")}`,
   }[status];
   const label = `${pkg.name} on ${nameOf(agent)}: ${words}`;
   const pressed = selection.has(cellKey(agent.id, pkg.id));
@@ -394,7 +429,7 @@ function rowHtml(agent, pkgs) {
     `<tr class="${agent.online ? "" : "offline"}"><th scope="row" class="rowhead">` +
     `<div class="rowhead-in" title="${esc(agentDetails(agent))}">` +
     `<span class="dot${agent.online ? " on" : ""}"></span><span class="pc-name">${esc(nameOf(agent))}</span>${warn}${agentTagHtml(agent)}` +
-    `<span class="row-actions">${update}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Rename ${esc(nameOf(agent))}">Rename</button>${forget}</span>` +
+    `<span class="row-actions">${update}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Edit the name and role of ${esc(nameOf(agent))}">Edit</button>${forget}</span>` +
     `</div></th>${pkgs.map((p) => cellHtml(agent, p)).join("")}</tr>`
   );
 }
@@ -435,7 +470,7 @@ function renderMatrix() {
     .join("");
   const visible = sortedAgents().filter(matchesFilter);
   const body = visible.length
-    ? visible.map((a) => rowHtml(a, pkgs)).join("")
+    ? rowsByRole(visible, pkgs)
     : `<tr><td class="none-match" colspan="${pkgs.length + 1}">No PCs match.</td></tr>`;
   el.innerHTML =
     `<div class="matrix"><table class="grid" style="--pkgs:${pkgs.length}">` +
@@ -457,7 +492,7 @@ function currentChanges() {
       const key = cellKey(agent.id, pkg.id);
       if (!selection.has(key)) continue;
       const { status, receipt } = cellInfo(agent, pkg);
-      const verb = { old: "Update", current: "Reinstall", failed: "Retry", found: "Replace" }[status] ?? "Install";
+      const verb = { old: "Update", current: "Reinstall", failed: "Retry", found: "Replace", partial: "Retry" }[status] ?? "Install";
       out.push({ key, agent, pkg, verb, installed: !!receipt });
     }
   }
@@ -514,10 +549,11 @@ function renderJobs() {
   list.innerHTML = state.jobs
     .map((j) => {
       const cancelled = isCancelled(j);
-      const statusLabel = cancelled ? "Cancelled" : STATUS[j.status];
+      const partly = j.status === "done" && j.partial?.length;
+      const statusLabel = cancelled ? "Cancelled" : partly ? "Partly done" : STATUS[j.status];
       const keyClass = cancelled
         ? "cancelled"
-        : j.status === "done" ? "done" : j.status === "failed" ? "failed" : j.status === "queued" ? "queued" : "busy";
+        : partly ? "partial" : j.status === "done" ? "done" : j.status === "failed" ? "failed" : j.status === "queued" ? "queued" : "busy";
       const open = j.id === openJobId;
       let extra = "";
       if (cancelled) {
@@ -531,6 +567,11 @@ function renderJobs() {
             ? `<button type="button" class="btn xs primary" data-retry-kill="${esc(j.id)}">Close ${esc(reason.app)} &amp; retry</button>`
             : "") +
           `</div>`;
+      } else if (partly) {
+        const parts = j.partial.map((p) => p.split(":")[0]);
+        extra =
+          `<div class="job-extra"><span class="reason warn" title="${esc(j.partial.join("\n"))}">Failed in ${esc(listText(parts))}</span>` +
+          `<button type="button" class="btn xs" data-retry="${esc(j.id)}">Retry</button></div>`;
       } else if (j.status === "queued") {
         extra = `<div class="job-extra"><span class="reason muted">Waits for the PC to come online</span><button type="button" class="btn xs" data-cancel="${esc(j.id)}">Cancel</button></div>`;
       }
@@ -561,7 +602,78 @@ function renderSide() {
   $("panel-activity").hidden = tab !== "activity";
   renderChanges();
   renderJobs();
+  $("strip-changes").textContent = $("changes-count").textContent || "0";
+  $("strip-activity").textContent = $("activity-count").textContent || "0";
 }
+
+// ---- side panel size ------------------------------------------------------------------------
+// Dragging the bar between table and panel resizes the panel; it can also
+// collapse to a strip. Both are remembered per browser.
+
+const SIDE_DEFAULT = 340;
+const SIDE_MIN = 260;
+const SIDE_STEP = 24;
+const sideMax = () => Math.max(SIDE_MIN, Math.round(window.innerWidth * 0.6));
+let sideWidth = Number(remember.get("sideWidth")) || SIDE_DEFAULT;
+let sideCollapsed = remember.get("sideCollapsed") === "1";
+
+function applySide() {
+  sideWidth = Math.round(Math.min(Math.max(sideWidth, SIDE_MIN), sideMax()));
+  document.querySelector(".layout").style.setProperty("--side-w", `${sideWidth}px`);
+  document.body.classList.toggle("side-collapsed", sideCollapsed);
+  const bar = $("side-resizer");
+  bar.hidden = sideCollapsed;
+  bar.setAttribute("aria-valuenow", String(sideWidth));
+  bar.setAttribute("aria-valuemin", String(SIDE_MIN));
+  bar.setAttribute("aria-valuemax", String(sideMax()));
+}
+
+function setSideWidth(width) {
+  sideWidth = width;
+  applySide();
+  remember.set("sideWidth", String(sideWidth));
+}
+
+function setSideCollapsed(collapsed) {
+  sideCollapsed = collapsed;
+  remember.set("sideCollapsed", collapsed ? "1" : "0");
+  applySide();
+  $(collapsed ? "side-expand" : "side-collapse").focus();
+}
+
+$("side-collapse").addEventListener("click", () => setSideCollapsed(true));
+$("side-expand").addEventListener("click", () => setSideCollapsed(false));
+$("side-resizer").addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
+$("side-resizer").addEventListener("pointerdown", (event) => {
+  const bar = event.currentTarget;
+  bar.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing");
+  const right = document.querySelector(".layout").getBoundingClientRect().right;
+  const move = (e) => {
+    sideWidth = right - e.clientX;
+    applySide();
+  };
+  const end = () => {
+    bar.removeEventListener("pointermove", move);
+    document.body.classList.remove("resizing");
+    setSideWidth(sideWidth);
+  };
+  bar.addEventListener("pointermove", move);
+  bar.addEventListener("pointerup", end, { once: true });
+  bar.addEventListener("pointercancel", end, { once: true });
+});
+// The bar moves with the arrow keys: left widens the panel, right narrows it.
+$("side-resizer").addEventListener("keydown", (event) => {
+  const delta = { ArrowLeft: SIDE_STEP, ArrowRight: -SIDE_STEP }[event.key];
+  if (delta) setSideWidth(sideWidth + delta);
+  else if (event.key === "Home") setSideWidth(sideMax());
+  else if (event.key === "End") setSideWidth(SIDE_MIN);
+  else if (event.key === "Enter") setSideCollapsed(true);
+  else return;
+  event.preventDefault();
+});
+window.addEventListener("resize", applySide);
+applySide();
 
 function renderRecent() {
   const recent = [...state.agents].sort((a, b) => b.firstSeen.localeCompare(a.firstSeen)).slice(0, 3);
@@ -962,6 +1074,8 @@ function openRename(agentId) {
   $("rename-hint").textContent = `Only zeploy shows this name. The Windows name stays ${agent.hostname}.`;
   $("rename-input").value = agent.label ?? "";
   $("rename-input").placeholder = agent.hostname;
+  $("role-input").value = agent.role ?? "";
+  $("role-list").innerHTML = roles().map((r) => `<option value="${esc(r)}"></option>`).join("");
   $("rename-error").hidden = true;
   $("rename-dialog").showModal();
   $("rename-input").select();
@@ -969,7 +1083,7 @@ function openRename(agentId) {
 
 async function saveRename(label) {
   try {
-    await api("POST", "/api/agents/rename", { id: renamingId, label });
+    await api("POST", "/api/agents/rename", { id: renamingId, label, role: $("role-input").value.trim() });
     $("rename-dialog").close();
   } catch (err) {
     $("rename-error").textContent = err.message;
@@ -1048,10 +1162,17 @@ document.addEventListener("keydown", (event) => {
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
   if (document.querySelector("dialog[open]") || event.target.closest?.("input, textarea, select")) return;
   const showTab = (name) => () => {
+    if (sideCollapsed) setSideCollapsed(false);
     tab = name;
     render();
   };
-  const act = { a: () => openAdd(), c: () => state && openConnect(), 1: showTab("changes"), 2: showTab("activity") }[event.key];
+  const act = {
+    a: () => openAdd(),
+    c: () => state && openConnect(),
+    1: showTab("changes"),
+    2: showTab("activity"),
+    s: () => setSideCollapsed(!sideCollapsed),
+  }[event.key];
   if (!act) return;
   event.preventDefault();
   act();

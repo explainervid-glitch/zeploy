@@ -167,9 +167,37 @@ kbd {
 
 /* ---- layout -------------------------------------------------------------------- */
 
-.layout { display: flex; flex-wrap: wrap; min-height: calc(100vh - 47px - var(--bar)); }
-.main { flex: 999 1 560px; min-width: 0; padding: 20px 24px 28px; display: flex; flex-direction: column; gap: 14px; }
-.side { flex: 1 1 320px; max-width: 100%; border-left: 1px solid var(--line2); display: flex; flex-direction: column; }
+.layout { display: flex; min-height: calc(100vh - 47px - var(--bar)); }
+.main { flex: 1 1 0; min-width: 0; padding: 20px 24px 28px; display: flex; flex-direction: column; gap: 14px; }
+.side { flex: 0 0 var(--side-w, 340px); min-width: 0; max-width: 60vw; border-left: 1px solid var(--line2); display: flex; flex-direction: column; }
+
+/* The bar between table and side panel: drag, or focus it and use the arrow keys. */
+.resizer { flex: none; width: 7px; margin: 0 -4px 0 -3px; position: relative; z-index: 2; cursor: col-resize; touch-action: none; }
+.resizer:hover, .resizer:focus-visible, body.resizing .resizer { background: color-mix(in oklab, var(--accent) 45%, transparent); outline: 0; }
+body.resizing { cursor: col-resize; user-select: none; }
+.side-toggle { margin-left: auto; font-size: 14px; }
+.side-toggle:hover { background: var(--accent); }
+
+/* Collapsed, the panel is a strip that shows its counts and expands on click. */
+.side-strip { display: none; }
+body.side-collapsed .side { flex-basis: 34px; }
+body.side-collapsed .side > :not(.side-strip) { display: none !important; }
+body.side-collapsed .side-strip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+body.side-collapsed .side-strip:hover { background: var(--raised); color: var(--text); }
+.strip-label { writing-mode: vertical-rl; }
 
 /* ---- filters ------------------------------------------------------------------- */
 
@@ -250,6 +278,18 @@ kbd {
 .colhead:hover .colhead-remove, .colhead:focus-within .colhead-remove,
 .colhead:hover .colhead-update, .colhead:focus-within .colhead-update { opacity: 1; }
 
+/* A role's header row above its PCs. */
+.grid .role-row th {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  text-align: left;
+  font-weight: 400;
+}
+.grid .role-row .role-name { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.grid .role-row .role-name::before { content: "▸ "; }
+.grid .role-row .role-count { margin-left: 12px; font-size: 11px; color: var(--muted); }
+.grid tbody tr.role-row:hover { background: none; }
 .rowhead { padding: 0 8px 0 16px; text-align: left; font-weight: 400; }
 .rowhead-in { position: relative; display: flex; align-items: center; gap: 10px; height: 50px; min-width: 0; }
 .pc-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -298,6 +338,7 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .cap.busy { color: var(--accent); }
 .cap.failed { color: var(--err); }
 .cap.found { color: var(--accent); }
+.cap.partial { color: var(--warn); }
 .none-match { padding: 14px 16px !important; color: var(--muted); font-size: 12px; }
 
 /* ---- keyframe diamonds ------------------------------------------------------------- */
@@ -317,6 +358,8 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .key.failed { border-color: var(--err); background: color-mix(in oklab, var(--err) 25%, transparent); }
 .key.done { background: var(--ok); border-color: var(--ok); }
 .key.cancelled { border-color: var(--line2); }
+/* Installed, but failed in some parts (Blender versions): half filled. */
+.key.partial { border-color: var(--warn); background: linear-gradient(135deg, var(--label, var(--warn)) 50%, transparent 50%); }
 /* On the PC, but not installed by zeploy. */
 .key.found { border: 1.5px dashed var(--accent); }
 .key.none { width: 3px; height: 3px; border: 0; background: var(--line2); transform: none; }
@@ -407,6 +450,7 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .job-extra { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 14px 10px 32px; }
 .job-extra .reason { flex: 1 1 140px; min-width: 0; font-size: 11px; color: var(--err); overflow: hidden; text-overflow: ellipsis; }
 .job-extra .reason.muted { color: var(--muted); }
+.job-extra .reason.warn { color: var(--warn); }
 .log {
   margin: 0 14px 12px;
   padding: 8px 10px;
@@ -577,7 +621,11 @@ body.dragging::after {
 @media (max-width: 760px) {
   .topbar { padding: 0 12px; }
   .main { padding: 14px 12px; }
-  .side { border-left: 0; border-top: 1px solid var(--line2); }
+  .layout { flex-wrap: wrap; }
+  .side, body.side-collapsed .side { flex: 1 1 100%; max-width: none; border-left: 0; border-top: 1px solid var(--line2); }
+  .resizer { display: none; }
+  .strip-label { writing-mode: horizontal-tb; }
+  body.side-collapsed .side-strip { flex-direction: row; justify-content: center; }
   .statusbar { padding: 0 12px; gap: 12px; }
   .statusbar > span:not(.status-server) { display: none; }
 }

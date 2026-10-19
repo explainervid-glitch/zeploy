@@ -8,7 +8,13 @@
 import type { AppId, Environment } from "./env.ts";
 import type { Manifest } from "./manifest.ts";
 
-export type Action =
+// `part` names a piece of an install that may fail on its own, such as one
+// Blender version ("Blender 4.5"). When an action of a part fails, the rest
+// of that part is skipped, the other parts go on, and the receipt leaves the
+// part out: the install counts as partly done instead of failed.
+export type Action = ActionKind & { part?: string };
+
+type ActionKind =
   | { kind: "ensureNotRunning"; app: AppId; process: string }
   // Copy a folder to `to`, replacing whatever is there. Paths in `exclude`
   // are relative to `from`.
@@ -23,7 +29,9 @@ export type Action =
   | { kind: "exec"; label: string; file: string; args: string[]; timeoutMs?: number; tolerate?: string };
 
 // What an install left on the machine, kept so it can be removed later.
-export type ReceiptItem =
+export type ReceiptItem = ReceiptItemKind & { part?: string };
+
+type ReceiptItemKind =
   | { kind: "path"; path: string }
   | { kind: "blender-extension"; exe: string; version: string; id: string }
   | { kind: "blender-addon"; exe: string; version: string; module: string }
@@ -37,6 +45,14 @@ export interface Receipt {
   installedAt: string;
   apps: AppId[];
   items: ReceiptItem[];
+  // Parts of the install that failed ("Blender 4.5") and why. Absent when
+  // everything went on.
+  failed?: FailedPart[];
+}
+
+export interface FailedPart {
+  part: string;
+  error: string;
 }
 
 export type CepScope = "auto" | "system" | "user";

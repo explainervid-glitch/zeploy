@@ -33,6 +33,9 @@ export interface AgentRecord {
   id: string;
   // Name the admin gave this PC in zeploy; the Windows name stays `hostname`.
   label?: string;
+  // Role the admin gave this PC ("Animator", "Compositor"); the admin UI
+  // groups PCs by it.
+  role?: string;
   hostname: string;
   user: string;
   agentVersion: string;
@@ -62,6 +65,8 @@ export interface JobRecord {
   finishedAt?: string;
   log: string[];
   error?: string;
+  // A done install that failed in some parts ("Blender 4.5: ..."): partly done.
+  partial?: string[];
 }
 
 export interface StoreData {

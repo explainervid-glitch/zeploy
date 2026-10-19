@@ -183,7 +183,11 @@ async function main(argv: string[]): Promise<number> {
         },
       });
       const from = r.previous ? ` (was ${r.previous.version})` : "";
-      log(dryRun ? "Dry run done, nothing changed." : `Installed ${r.manifest.name} ${r.manifest.version}${from}.`);
+      if (dryRun) log("Dry run done, nothing changed.");
+      else if (r.failed.length) {
+        log(`Partly installed ${r.manifest.name} ${r.manifest.version}${from}; failed in ${r.failed.map((f) => f.part).join(", ")}.`);
+        return 1;
+      } else log(`Installed ${r.manifest.name} ${r.manifest.version}${from}.`);
       return 0;
     }
 

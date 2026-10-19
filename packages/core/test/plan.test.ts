@@ -136,7 +136,7 @@ test("blender: a legacy add-on is installed through Python and --blender narrows
   const plan = await planInstall(ctx(root, env, [{ type: "blender", source: "addon.zip" }], { blenderVersions: ["5.2"] }));
 
   assert.deepEqual(plan.items, [
-    { kind: "blender-addon", exe: join(root, "Blender 5.2", "blender.exe"), version: "5.2", module: "auto_rig_pro-master" },
+    { kind: "blender-addon", exe: join(root, "Blender 5.2", "blender.exe"), version: "5.2", module: "auto_rig_pro-master", part: "Blender 5.2" },
   ]);
   const exec = plan.actions.find((a) => a.kind === "exec");
   assert.ok(exec?.kind === "exec" && exec.args.includes("--python-expr"));

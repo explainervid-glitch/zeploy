@@ -2,7 +2,7 @@
 
 import { copyFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Action, Plan } from "./actions.ts";
+import type { Action, FailedPart, Plan } from "./actions.ts";
 import { APP_LABELS, type AppId } from "./env.ts";
 import { removeSafe, replaceDir } from "./fsutil.ts";
 import { killProcess, listProcesses, regSetString, run } from "./win.ts";
@@ -106,7 +106,10 @@ async function runAction(a: Action): Promise<void> {
   }
 }
 
-export async function executePlan(plan: Plan, options: ExecuteOptions): Promise<void> {
+// A failing action without a part stops the plan (it throws). One with a
+// part only stops its part; the parts that failed are returned.
+export async function executePlan(plan: Plan, options: ExecuteOptions): Promise<FailedPart[]> {
+  const failed: FailedPart[] = [];
   for (const w of plan.warnings) options.log(`  [!] ${w}`);
   await checkRunning(plan, options);
 
@@ -116,6 +119,7 @@ export async function executePlan(plan: Plan, options: ExecuteOptions): Promise<
   let regLogged = false;
 
   for (const a of steps) {
+    if (a.part && failed.some((f) => f.part === a.part)) continue;
     if (a.kind === "setRegistry") {
       if (!regLogged) {
         options.log(`  ${options.dryRun ? "would set" : "set"} PlayerDebugMode=1 for ${regs.length} CSXS version(s)`);
@@ -124,6 +128,15 @@ export async function executePlan(plan: Plan, options: ExecuteOptions): Promise<
     } else {
       options.log(`  ${options.dryRun ? "would " : ""}${describeAction(a)}`);
     }
-    if (!options.dryRun) await runAction(a);
+    if (options.dryRun) continue;
+    try {
+      await runAction(a);
+    } catch (err) {
+      if (!a.part) throw err;
+      const error = (err as Error).message;
+      failed.push({ part: a.part, error });
+      options.log(`  [x] ${a.part} failed, the rest goes on: ${error}`);
+    }
   }
+  return failed;
 }

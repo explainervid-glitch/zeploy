@@ -178,7 +178,15 @@ export const agentStateSchema = z.object({
   isAdmin: z.boolean(),
   adobe: z.array(z.object({ app: z.string(), version: z.string() })),
   blender: z.array(z.string()),
-  receipts: z.array(z.object({ id: z.string(), version: z.string(), installedAt: z.string() })),
+  receipts: z.array(
+    z.object({
+      id: z.string(),
+      version: z.string(),
+      installedAt: z.string(),
+      // Parts that failed in a partial install ("Blender 4.5"). From agent 0.5.0.
+      failed: z.array(z.string().max(100)).max(20).optional(),
+    }),
+  ),
   // Plugins found in the install folders, installed by zeploy or not, keyed
   // like packages ("cep:com.colosave.panel"). Absent from agents before 0.4.0.
   found: z
@@ -191,7 +199,14 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("state"), state: agentStateSchema }),
   z.object({ type: z.literal("jobStarted"), jobId: z.string() }),
   z.object({ type: z.literal("jobLog"), jobId: z.string(), line: z.string().max(4000) }),
-  z.object({ type: z.literal("jobDone"), jobId: z.string(), ok: z.boolean(), error: z.string().max(8000).optional() }),
+  z.object({
+    type: z.literal("jobDone"),
+    jobId: z.string(),
+    ok: z.boolean(),
+    error: z.string().max(8000).optional(),
+    // ok with parts that failed ("Blender 4.5: ..."): installed partly. From agent 0.5.0.
+    partial: z.array(z.string().max(2000)).max(20).optional(),
+  }),
 ]);
 
 export type JobOptions = z.infer<typeof jobOptionsSchema>;

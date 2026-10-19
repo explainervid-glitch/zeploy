@@ -325,7 +325,7 @@ components point at, so the package folder can be the plugin's working folder.
 | `ae-script` | `.jsx`/`.jsxbin` file or folder | `Support Files\Scripts\<folder>` in every After Effects install. Needs an elevated agent |
 | `jsfl` | `.jsfl` file or folder | `%LOCALAPPDATA%\Adobe\Animate <version>\<language>\Configuration\<folder>` |
 | `zxp` | signed `.zxp` or `.ccx` | through Adobe's UnifiedPluginInstallerAgent |
-| `blender` | extension `.zip`, legacy add-on `.zip`, or single-file `.py` | every compatible Blender version, installed and enabled by Blender itself |
+| `blender` | extension `.zip`, legacy add-on `.zip`, or single-file `.py` | every compatible Blender version, installed and enabled by Blender itself. Each version installs on its own: if one fails, the others stay installed and the install counts as partly done |
 
 Optional fields:
 
@@ -452,6 +452,10 @@ There is one row per PC and one column per package (its latest version). Columns
 - Pulsing: a job is queued or running.
 - "Failed" in red: the last job for that cell failed. Open it under
   **Activity** to see why.
+- Half-filled amber ◆ with "Partial": a Blender add-on installed in some
+  Blender versions and failed in others (needs agent 0.5.0). Hover to see
+  which. **Activity** shows the job as "Partly done", with **Retry**; select
+  the cell to retry it too. The **Failed** filter includes these PCs.
 
 Each row also shows the PC's user, its IP address, whether it is online, and
 the Adobe and Blender versions its agent found. Connected PCs are listed even
@@ -561,14 +565,24 @@ token.
 - **Activity** lists every job. Click one to see its log.
 - **Remove from repository** (under a package name) deletes that version from
   the admin app. Plugins already installed on PCs stay installed.
-- **Rename** (next to a PC's name) gives the PC a name shown only in zeploy,
-  such as the person who uses it. The Windows computer name stays next to it
-  in grey, and the name survives reconnects. **Use Windows name** removes it.
+- **Edit** (next to a PC's name) sets two things shown only in zeploy:
+  - **Name**, such as the person who uses it. The Windows computer name stays
+    in the tooltip. **Use Windows name** removes it.
+  - **Role**, such as Animator or Compositor. The table groups PCs under a
+    header per role (A to Z, with "No role" last) showing how many are online.
+    Existing roles are offered as you type, and a role typed in other case
+    ("animator") joins the existing one. Leave it empty for no role.
+
+  Both survive reconnects.
 - **Forget PC** (on an offline PC) removes it from the table. It comes back
   when its agent connects again.
 - **Copy team token** copies the token agents use to connect.
 - Keys (shown in the status bar): `a` add package, `c` connect PC, `1` changes,
-  `2` activity, `Esc` closes a dialog. Removing plugins from PCs, deleting a
+  `2` activity, `s` collapses or expands the side panel, `Esc` closes a dialog.
+- The side panel can be resized: drag the bar on its left edge, or focus the
+  bar and use the arrow keys. Double-click the bar to reset the width. **»**
+  collapses the panel to a strip showing its counts; click the strip to expand
+  it. Width and collapsed state are remembered. Removing plugins from PCs, deleting a
   package version and forgetting a PC each ask first; Enter cancels.
 
 ## 5. Troubleshooting

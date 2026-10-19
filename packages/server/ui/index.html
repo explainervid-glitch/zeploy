@@ -31,11 +31,18 @@
       <div id="matrix"></div>
     </main>
 
-    <aside class="side" aria-label="Changes and activity">
+    <div id="side-resizer" class="resizer" role="separator" aria-orientation="vertical" aria-controls="side"
+         aria-label="Resize the side panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
+
+    <aside id="side" class="side" aria-label="Changes and activity">
       <div class="tabs" role="group" aria-label="Panel">
         <button type="button" id="tab-changes" class="tab" aria-pressed="true">Changes <span id="changes-count" class="count"></span></button>
         <button type="button" id="tab-activity" class="tab" aria-pressed="false">Activity <span id="activity-count" class="count"></span></button>
+        <button type="button" id="side-collapse" class="icon-btn side-toggle" aria-label="Collapse the side panel" title="Collapse (s)">»</button>
       </div>
+      <button type="button" id="side-expand" class="side-strip" aria-label="Expand the side panel" title="Expand (s)">
+        <span aria-hidden="true">«</span><span class="strip-label">Changes <span id="strip-changes"></span> · Activity <span id="strip-activity"></span></span>
+      </button>
 
       <section id="panel-changes" class="panel">
         <p id="changes-empty" class="empty-line">Click cells to install, update or remove a plugin on those PCs. Click a package name to pick its whole column.</p>
@@ -160,7 +167,7 @@
   <dialog id="rename-dialog" class="sheet" aria-labelledby="rename-title">
     <form id="rename-form">
       <div class="sheet-head">
-        <h2 id="rename-title">Rename PC</h2>
+        <h2 id="rename-title">Edit PC</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
           <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
         </button>
@@ -169,6 +176,10 @@
         <label for="rename-input" class="label">Name in zeploy</label>
         <input id="rename-input" class="input" type="text" maxlength="60" spellcheck="false" autocomplete="off">
         <p id="rename-hint" class="muted small"></p>
+        <label for="role-input" class="label">Role</label>
+        <input id="role-input" class="input" type="text" maxlength="40" spellcheck="false" autocomplete="off" list="role-list" placeholder="Animator, Compositor, 3D…">
+        <datalist id="role-list"></datalist>
+        <p class="muted small">The table groups PCs by role. Leave it empty for no role.</p>
         <p id="rename-error" class="error" role="alert" hidden></p>
       </div>
       <div class="sheet-foot">
@@ -199,6 +210,7 @@
     <span><kbd>c</kbd> connect PC</span>
     <span><kbd>1</kbd> changes</span>
     <span><kbd>2</kbd> activity</span>
+    <span><kbd>s</kbd> side panel</span>
     <span><kbd>esc</kbd> close</span>
     <span id="status-server" class="status-server"></span>
   </footer>

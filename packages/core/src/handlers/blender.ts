@@ -223,6 +223,8 @@ export async function planBlender(c: BlenderComponent, ctx: PlanContext): Promis
   result.actions.push({ kind: "ensureNotRunning", app: "blender", process: APP_PROCESSES.blender });
 
   for (const b of targets) {
+    // Each Blender version installs on its own: one that fails leaves the others installed.
+    const part = `Blender ${b.version}`;
     for (const p of await installPaths(b, env, kind, module)) {
       const target = await linkTarget(p);
       if (!target) continue;
@@ -232,7 +234,7 @@ export async function planBlender(c: BlenderComponent, ctx: PlanContext): Promis
             `  Use --replace-dev-links to replace the link with an installed copy (the linked folder itself is not touched).`,
         );
       }
-      result.actions.push({ kind: "removePath", path: p, reason: "developer link replaced by an installed copy" });
+      result.actions.push({ kind: "removePath", path: p, reason: "developer link replaced by an installed copy", part });
     }
 
     if (kind === "extension") {
@@ -242,8 +244,9 @@ export async function planBlender(c: BlenderComponent, ctx: PlanContext): Promis
         file: b.exe,
         args: ["--command", "extension", "install-file", "--repo", "user_default", "--enable", source],
         timeoutMs: BLENDER_TIMEOUT_MS,
+        part,
       });
-      result.items.push({ kind: "blender-extension", exe: b.exe, version: b.version, id: module });
+      result.items.push({ kind: "blender-extension", exe: b.exe, version: b.version, id: module, part });
     } else {
       result.actions.push({
         kind: "exec",
@@ -251,8 +254,9 @@ export async function planBlender(c: BlenderComponent, ctx: PlanContext): Promis
         file: b.exe,
         args: ["--background", "--python-exit-code", "1", "--python-expr", addonInstallScript(source, module)],
         timeoutMs: BLENDER_TIMEOUT_MS,
+        part,
       });
-      result.items.push({ kind: "blender-addon", exe: b.exe, version: b.version, module });
+      result.items.push({ kind: "blender-addon", exe: b.exe, version: b.version, module, part });
     }
   }
   return result;

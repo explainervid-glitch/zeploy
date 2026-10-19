@@ -124,3 +124,25 @@ test("exec failures carry the command output", async () => {
     /failing step failed \(exit 3\):\s+boom/,
   );
 });
+
+test("a failing part stops only that part; the others go on", async () => {
+  const root = await makeTmp();
+  await write(join(root, "src.txt"), "x");
+  const { lines, log } = collectLog();
+  const plan: Plan = {
+    apps: [],
+    items: [],
+    warnings: [],
+    actions: [
+      { kind: "exec", label: "Blender 4.5: install add-on", file: "cmd", args: ["/c", "exit 3"], part: "Blender 4.5" },
+      { kind: "copyFile", from: join(root, "src.txt"), to: join(root, "after-4.5.txt"), part: "Blender 4.5" },
+      { kind: "copyFile", from: join(root, "src.txt"), to: join(root, "4.2.txt"), part: "Blender 4.2" },
+      { kind: "copyFile", from: join(root, "src.txt"), to: join(root, "shared.txt") },
+    ],
+  };
+  const failed = await executePlan(plan, { dryRun: false, ifRunning: "fail", log, processes: noProcesses });
+  assert.deepEqual(failed.map((f) => f.part), ["Blender 4.5"]);
+  assert.match(failed[0]!.error, /exit 3/);
+  assert.deepEqual((await readdir(root)).sort(), ["4.2.txt", "shared.txt", "src.txt"]);
+  assert.match(lines.join("\n"), /\[x\] Blender 4.5 failed, the rest goes on/);
+});

@@ -209,14 +209,15 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
 
   // ---- jobs -------------------------------------------------------------------
 
-  function finishJob(job: JobRecord, ok: boolean, error?: string): void {
+  function finishJob(job: JobRecord, ok: boolean, error?: string, partial?: string[]): void {
     job.status = ok ? "done" : "failed";
     job.error = error;
+    if (ok && partial?.length) job.partial = partial;
     job.finishedAt = new Date().toISOString();
     downloads.delete(job.id);
     clearTimeout(restartTimers.get(job.id));
     restartTimers.delete(job.id);
-    log(`job ${job.id.slice(0, 8)} ${job.action} ${job.packageId} on ${job.agentId.slice(0, 8)}: ${job.status}${error ? ` (${error.split("\n")[0]})` : ""}`);
+    log(`job ${job.id.slice(0, 8)} ${job.action} ${job.packageId} on ${job.agentId.slice(0, 8)}: ${job.partial ? "partly done" : job.status}${error ? ` (${error.split("\n")[0]})` : ""}`);
   }
 
   function jobLine(job: JobRecord, line: string): void {
@@ -304,6 +305,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     store.data.agents[conn.agentId] = {
       id: conn.agentId,
       label: prev?.label,
+      role: prev?.role,
       hostname: info.hostname,
       user: info.user,
       agentVersion: info.agentVersion,
@@ -364,7 +366,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         jobLine(job!, msg.line);
         break;
       case "jobDone":
-        finishJob(job!, msg.ok, msg.error);
+        finishJob(job!, msg.ok, msg.error, msg.partial);
         conn.busy = null;
         changed();
         pump(conn.agentId);
@@ -667,13 +669,24 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         return json(res, 200, { ok: true });
       case "POST /api/agents/rename": {
         const body = z
-          .object({ id: z.string(), label: z.string().trim().max(60, "keep the name to 60 characters") })
+          .object({
+            id: z.string(),
+            label: z.string().trim().max(60, "keep the name to 60 characters"),
+            // Absent: the role stays as it is. Empty: the PC has no role.
+            role: z.string().trim().max(40, "keep the role to 40 characters").optional(),
+          })
           .parse(await readJson(req));
         const agent = store.data.agents[body.id];
         if (!agent) throw new HttpError(404, "no such PC");
         // An empty name goes back to the Windows computer name.
         if (body.label) agent.label = body.label;
         else delete agent.label;
+        if (body.role !== undefined) {
+          // Same role whatever the case it was typed in: "animator" joins "Animator".
+          const existing = Object.values(store.data.agents).find((a) => a.role?.toLowerCase() === body.role!.toLowerCase());
+          if (body.role) agent.role = existing?.role ?? body.role;
+          else delete agent.role;
+        }
         changed();
         return json(res, 200, agent);
       }

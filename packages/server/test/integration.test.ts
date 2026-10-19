@@ -201,6 +201,27 @@ test("a PC keeps the name the admin gave it across reconnects", async () => {
   assert.equal(cleared.body.label, undefined);
 });
 
+test("a PC keeps the role the admin gave it; the same role in other case is one role", async () => {
+  const set = await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "", role: "  Animator " });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.equal(set.body.role, "Animator");
+
+  for (const a of agents.splice(0)) await a.stop();
+  await agentOnline(false);
+  launchAgent(server.store.data.enrollToken);
+  assert.equal((await agentOnline(true)).role, "Animator");
+
+  // Leaving the role out of a rename keeps it.
+  assert.equal((await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "x" })).body.role, "Animator");
+  server.store.data.agents["other-pc"] = { ...server.store.data.agents["agent-test-0001"]!, id: "other-pc" };
+  assert.equal((await api("POST", "/api/agents/rename", { id: "other-pc", label: "", role: "animator" })).body.role, "Animator");
+  delete server.store.data.agents["other-pc"];
+
+  const cleared = await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "", role: "" });
+  assert.equal(cleared.body.role, undefined);
+  assert.equal((await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "", role: "x".repeat(41) })).status, 400);
+});
+
 test("the admin API saves a one-click installer with this server's team token", async () => {
   assert.equal((await api("GET", "/api/state")).body.installerReady, true);
   const folder = join(root, "share");

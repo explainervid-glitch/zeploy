@@ -96,7 +96,12 @@ export function startAgent(options: AgentOptions): RunningAgent {
           isAdmin: env.isAdmin,
           adobe: env.adobe.map((a) => ({ app: a.app, version: a.version })),
           blender: env.blender.map((b) => b.version),
-          receipts: receipts.map((r) => ({ id: r.id, version: r.version, installedAt: r.installedAt })),
+          receipts: receipts.map((r) => ({
+            id: r.id,
+            version: r.version,
+            installedAt: r.installedAt,
+            ...(r.failed?.length ? { failed: r.failed.map((f) => f.part) } : {}),
+          })),
           found,
         },
       });
@@ -160,6 +165,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
 
     let downloaded: string | null = null;
     let replaced = false;
+    let partial: string[] = [];
     try {
       const env = await detect();
       const file = (stem: string, ext: string) => join(env.home, "downloads", `${stem}-${job.id.slice(0, 8)}${ext}`);
@@ -172,15 +178,17 @@ export function startAgent(options: AgentOptions): RunningAgent {
         const exec: ExecuteOptions = { dryRun: false, ifRunning: job.options.ifRunning, log: jobLog, ...options.exec };
         if (job.action === "install") {
           downloaded = await download(job.downloadPath, job.sha256, file(`${job.packageId}-${job.version}`, ".zip"));
-          await installPackage(downloaded, env, {
+          const result = await installPackage(downloaded, env, {
             ...exec,
             expectedSha256: job.sha256,
             plan: { scope: job.options.scope, replaceDevLinks: job.options.replaceDevLinks },
           });
+          // Installed in some Blender versions, failed in others: done, with the failures listed.
+          partial = result.failed.map((f) => `${f.part}: ${f.error}`.slice(0, 2000));
         } else {
           await uninstallPackage(job.packageId, env, exec);
         }
-        send({ type: "jobDone", jobId: job.id, ok: true });
+        send({ type: "jobDone", jobId: job.id, ok: true, ...(partial.length ? { partial } : {}) });
       }
     } catch (err) {
       const message = (err as Error).message;

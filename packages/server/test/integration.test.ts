@@ -352,6 +352,30 @@ test("a plugin without zeploy.json: details are read, typed over, and a new vers
   assert.equal(again.body.status, "same", "adding the same plugin twice is no conflict");
 });
 
+test("a PC reports a plugin it has without zeploy, and packages remember their source", async () => {
+  // agent-test-0001 runs on the fake PC at <root>/pc; a panel copied by hand:
+  const env = fakeEnv(join(root, "pc"));
+  await writeCepPanel(join(env.cep.user, "hand-copied"), "com.handmade.panel");
+  await api("POST", "/api/agents/refresh");
+  const agent = await waitFor("found plugin", async () => {
+    const { body } = await api("GET", "/api/state");
+    const a = body.agents.find((x: any) => x.id === "agent-test-0001");
+    return a?.state?.found?.some((f: any) => f.key === "cep:com.handmade.panel") ? a : null;
+  });
+  assert.deepEqual(
+    agent.state.found.find((f: any) => f.key === "cep:com.handmade.panel"),
+    { key: "cep:com.handmade.panel", version: "1.0.0", where: "CEP, this user" },
+  );
+
+  // Added from a folder: the record keeps that path; the UI reads it again for updates.
+  const folder = join(root, "handmade", "com.handmade.panel");
+  await writeCepPanel(folder, "com.handmade.panel");
+  const added = await api("POST", "/api/packages/import", { path: folder });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.source, folder);
+  assert.deepEqual(added.body.keys, ["cep:com.handmade.panel"]);
+});
+
 test("a download link only works with its job's token", async () => {
   const res = await fetch(`http://127.0.0.1:${server.port}/download/nope?t=x`);
   assert.equal(res.status, 404);

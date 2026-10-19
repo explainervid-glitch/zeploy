@@ -21,6 +21,9 @@ export interface PackageRecord {
   // without zeploy.json joins this package. Missing on packages added
   // before zeploy read plugin files.
   keys?: string[];
+  // The folder or file it was added from, so the admin app can read it again
+  // for a newer version. Missing for uploads and older packages.
+  source?: string;
 }
 
 export interface AgentRecord {

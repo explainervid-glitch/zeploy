@@ -28,6 +28,7 @@ import {
   latestPackage,
   packagesDir,
   removePackage,
+  backfillKeys,
 } from "./packages.ts";
 import { AGENT_PACKAGE_ID, MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
 
@@ -521,10 +522,14 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     return file;
   }
 
+  function isUpload(path: string): boolean {
+    const rel = relative(uploadsDir, path);
+    return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
+  }
+
   // An uploaded file is not needed once it is in the repository.
   async function dropUpload(path: string): Promise<void> {
-    const rel = relative(uploadsDir, path);
-    if (rel && !rel.startsWith("..") && !isAbsolute(rel)) await rm(dirname(path), { recursive: true, force: true });
+    if (isUpload(path)) await rm(dirname(path), { recursive: true, force: true });
   }
 
   function createJobs(body: z.infer<typeof jobRequestSchema>): JobRecord[] {
@@ -623,7 +628,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       }
       case "POST /api/packages/import": {
         const { path, overrides } = packageRequestSchema.parse(await readJson(req));
-        const { record, apps } = await importPackage(store, path, overrides);
+        const { record, apps } = await importPackage(store, path, overrides, isUpload(path) ? undefined : path);
         await dropUpload(path);
         changed();
         return json(res, 200, { ...record, apps });
@@ -732,6 +737,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
 
   // Hashing the agent exe takes a moment; the UI shows the update when done.
   const agentBuildLoaded = refreshAgentBuild().catch((err: Error) => log(`could not read the agent exe: ${err.message}`));
+  const keysBackfilled = backfillKeys(store)
+    .then((changedAny) => changedAny && changed())
+    .catch((err: Error) => log(`could not read stored packages: ${err.message}`));
 
   return {
     port,
@@ -749,6 +757,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         http.closeAllConnections();
       });
       await agentBuildLoaded;
+      await keysBackfilled;
       for (const timer of restartTimers.values()) clearTimeout(timer);
       if (stateTimer) clearTimeout(stateTimer);
       await store.flush();

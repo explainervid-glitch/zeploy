@@ -13,10 +13,10 @@
   --line2: #49525A;
   --text: #D8DCD6;
   --muted: #868F96;
-  --primary: #8FD16A;
+  --primary: #1BE06D;
   --on-primary: #0D0F10;
   --accent: #6CC7E8;
-  --ok: #8FD16A;
+  --ok: #1BE06D;
   --warn: #E8B04B;
   --err: #F06C62;
   --scrim: rgba(4, 5, 6, 0.72);
@@ -228,7 +228,10 @@ kbd {
 .colhead .ver { font-size: 11px; color: var(--muted); }
 .colhead .ver::before { content: "v"; }
 .colhead-remove { position: absolute; top: 4px; right: 3px; width: 20px; height: 20px; opacity: 0; }
-.colhead:hover .colhead-remove, .colhead:focus-within .colhead-remove { opacity: 1; }
+.colhead-update { position: absolute; top: 4px; left: 3px; width: 20px; height: 20px; opacity: 0; font-size: 13px; }
+.colhead-update:hover { background: var(--accent); color: var(--bg); }
+.colhead:hover .colhead-remove, .colhead:focus-within .colhead-remove,
+.colhead:hover .colhead-update, .colhead:focus-within .colhead-update { opacity: 1; }
 
 .rowhead { padding: 0 8px 0 16px; text-align: left; font-weight: 400; }
 .rowhead-in { position: relative; display: flex; align-items: center; gap: 10px; height: 50px; min-width: 0; }
@@ -251,7 +254,7 @@ kbd {
   opacity: 0;
 }
 .grid tr:hover .row-actions, .rowhead:focus-within .row-actions { opacity: 1; }
-@media (hover: none) { .row-actions, .colhead-remove { opacity: 1; } }
+@media (hover: none) { .row-actions, .colhead-remove, .colhead-update { opacity: 1; } }
 .grid tbody tr:hover { background: color-mix(in oklab, var(--raised) 60%, transparent); }
 tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; }
 
@@ -277,6 +280,7 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .cap.old { color: var(--warn); }
 .cap.busy { color: var(--accent); }
 .cap.failed { color: var(--err); }
+.cap.found { color: var(--accent); }
 .none-match { padding: 14px 16px !important; color: var(--muted); font-size: 12px; }
 
 /* ---- keyframe diamonds ------------------------------------------------------------- */
@@ -296,6 +300,8 @@ tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; 
 .key.failed { border-color: var(--err); background: color-mix(in oklab, var(--err) 25%, transparent); }
 .key.done { background: var(--ok); border-color: var(--ok); }
 .key.cancelled { border-color: var(--line2); }
+/* On the PC, but not installed by zeploy. */
+.key.found { border: 1.5px dashed var(--accent); }
 .key.none { width: 3px; height: 3px; border: 0; background: var(--line2); transform: none; }
 @keyframes pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) {

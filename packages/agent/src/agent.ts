@@ -13,6 +13,7 @@ import {
   detectEnvironment,
   installPackage,
   listReceipts,
+  scanInstalled,
   uninstallPackage,
   type Environment,
   type ExecuteOptions,
@@ -85,6 +86,10 @@ export function startAgent(options: AgentOptions): RunningAgent {
     try {
       const env = await detect();
       const receipts = await listReceipts(env);
+      const found = await scanInstalled(env).catch((err: Error) => {
+        log(`could not look for installed plugins: ${err.message}`);
+        return [];
+      });
       send({
         type: "state",
         state: {
@@ -92,6 +97,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
           adobe: env.adobe.map((a) => ({ app: a.app, version: a.version })),
           blender: env.blender.map((b) => b.version),
           receipts: receipts.map((r) => ({ id: r.id, version: r.version, installedAt: r.installedAt })),
+          found,
         },
       });
     } catch (err) {

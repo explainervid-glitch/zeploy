@@ -4,8 +4,9 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("zeployDesktop", {
-  pickFolder: (title) => ipcRenderer.invoke("pick-folder", String(title ?? "")),
-  pickFile: (title) => ipcRenderer.invoke("pick-file", String(title ?? "")),
+  // defaultPath: the folder the picker opens in, such as the last one used.
+  pickFolder: (title, defaultPath) => ipcRenderer.invoke("pick-folder", String(title ?? ""), String(defaultPath ?? "")),
+  pickFile: (title, defaultPath) => ipcRenderer.invoke("pick-file", String(title ?? ""), String(defaultPath ?? "")),
   // Empty for anything that is not a local file, which the UI then uploads.
   pathForFile: (file) => {
     try {

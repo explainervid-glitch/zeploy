@@ -6,6 +6,7 @@
 // Bundled to CommonJS by scripts/build.mjs, so no top-level await here.
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { migrateLegacyDir } from "../../core/src/index.ts";
 import { DEFAULT_PORT } from "../../protocol/src/index.ts";
@@ -27,6 +28,12 @@ if (!app.requestSingleInstanceLock()) {
     win?.focus();
   });
   app.whenReady().then(boot);
+}
+
+// Where a picker opens: the folder the UI asks for, if it still exists.
+function startFolder(path: unknown): string | undefined {
+  if (typeof path !== "string" || !path || path.length > 1000) return undefined;
+  return existsSync(path) ? path : undefined;
 }
 
 async function boot(): Promise<void> {
@@ -51,18 +58,20 @@ async function boot(): Promise<void> {
   }
 
   const adminUrl = server.adminUrl;
-  ipcMain.handle("pick-folder", async (event, title: unknown) => {
+  ipcMain.handle("pick-folder", async (event, title: unknown, defaultPath: unknown) => {
     if (!event.senderFrame?.url.startsWith(adminUrl) || !win) return null;
     const result = await dialog.showOpenDialog(win, {
       title: typeof title === "string" && title ? title.slice(0, 120) : "Choose a folder",
+      defaultPath: startFolder(defaultPath),
       properties: ["openDirectory"],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
-  ipcMain.handle("pick-file", async (event, title: unknown) => {
+  ipcMain.handle("pick-file", async (event, title: unknown, defaultPath: unknown) => {
     if (!event.senderFrame?.url.startsWith(adminUrl) || !win) return null;
     const result = await dialog.showOpenDialog(win, {
       title: typeof title === "string" && title ? title.slice(0, 120) : "Choose a file",
+      defaultPath: startFolder(defaultPath),
       properties: ["openFile"],
       filters: [
         { name: "Plugins and packages", extensions: ["zip", "zxp", "ccx", "jsx", "jsxbin", "jsfl", "py"] },

@@ -209,12 +209,61 @@ function cellInfo(agent, pkg) {
   const jobs = state.jobs.filter((j) => j.agentId === agent.id && j.packageId === pkg.id && !isAgentJob(j) && !isCancelled(j));
   const active = jobs.find((j) => ACTIVE.has(j.status));
   const last = jobs.find((j) => !ACTIVE.has(j.status));
+  const found = receipt ? null : foundOn(agent, pkg);
   let status;
   if (active) status = active.status === "queued" ? "queued" : "busy";
   else if (last?.status === "failed") status = "failed";
   else if (receipt) status = compareSemver(receipt.version, pkg.version) >= 0 ? "current" : "old";
+  else if (found) status = "found";
   else status = "none";
-  return { status, receipt, active };
+  return { status, receipt, active, found };
+}
+
+// Where the newest version of a package that remembers it was added from.
+function sourceOf(pkg) {
+  return state.packages
+    .filter((p) => p.id === pkg.id && p.source)
+    .sort((a, b) => compareSemver(b.version, a.version))[0]?.source ?? null;
+}
+
+// Reads a package's source again. A newer version that needs nothing typed
+// in is added straight away; anything else opens the Add dialog on it.
+async function refreshPackage(id) {
+  const pkg = latestPackages().find((p) => p.id === id);
+  const path = pkg && sourceOf(pkg);
+  if (!path) return;
+  let preview;
+  try {
+    preview = await api("POST", "/api/packages/inspect", { path, overrides: { id } });
+  } catch (err) {
+    toast(`${pkg.name}: ${err.message}`, true);
+    return;
+  }
+  if (preview.id === id && preview.status === "same" && preview.version === pkg.version) {
+    toast(`${pkg.name} ${pkg.version} is the newest at\n${path}`);
+  } else if (preview.id === id && preview.status === "new" && compareSemver(preview.version, pkg.version) > 0) {
+    const record = await api("POST", "/api/packages/import", { path, overrides: { id } });
+    toast(`Updated ${pkg.name} to ${record.version}. Select the PCs that show Update.`);
+  } else {
+    openAdd(path, { id });
+  }
+}
+
+// Plugin identities of a package, from every version of it in the repository.
+function packageKeys(pkg) {
+  const keys = new Set(state.packages.filter((p) => p.id === pkg.id).flatMap((p) => p.keys ?? []));
+  // A .zxp lands in a CEP extensions folder, where agents report it as cep:.
+  for (const k of [...keys]) if (k.startsWith("zxp:")) keys.add(`cep:${k.slice(4)}`);
+  return keys;
+}
+
+// The plugin on that PC without a zeploy install record: copied by hand or
+// installed some other way. Of several copies, the oldest version counts.
+function foundOn(agent, pkg) {
+  const keys = packageKeys(pkg);
+  const hits = (agent.state?.found ?? []).filter((f) => keys.has(f.key));
+  if (!hits.length) return null;
+  return hits.sort((a, b) => compareSemver(a.version ?? "0.0.0", b.version ?? "0.0.0"))[0];
 }
 
 function hasStatus(agent, status) {
@@ -286,12 +335,14 @@ function agentTagHtml(agent) {
 }
 
 function cellHtml(agent, pkg) {
-  const { status, receipt, active } = cellInfo(agent, pkg);
+  const { status, receipt, active, found } = cellInfo(agent, pkg);
   const removing = active?.action === "uninstall";
-  const caption = { old: "Update", busy: removing ? "Removing" : "Installing", queued: "Queued", failed: "Failed" }[status] ?? "";
+  const foundCap = found?.version ? `Found ${found.version}` : "Found";
+  const caption = { old: "Update", busy: removing ? "Removing" : "Installing", queued: "Queued", failed: "Failed", found: foundCap }[status] ?? "";
   const words = {
     current: `version ${receipt?.version}, up to date`,
     old: `version ${receipt?.version}, update to ${pkg.version}`,
+    found: `already there without zeploy${found?.version ? `, version ${found.version}` : ""} (${found?.where}); installing replaces it`,
     none: "not installed",
     busy: removing ? "removing" : "installing",
     queued: "queued",
@@ -345,6 +396,10 @@ function renderMatrix() {
         `<th scope="col" class="colhead" style="--label:${labelFor(p.id)}">` +
         `<button type="button" class="colhead-btn" data-col="${esc(p.id)}" title="Select every PC for ${esc(p.name)}">` +
         `<span class="name">${esc(p.name)}</span><span class="ver code">${esc(p.version)}</span></button>` +
+        (sourceOf(p)
+          ? `<button type="button" class="icon-btn colhead-update" data-refresh-pkg="${esc(p.id)}" ` +
+            `aria-label="Check ${esc(sourceOf(p))} for a newer version of ${esc(p.name)}" title="Check for a newer version at ${esc(sourceOf(p))}">↻</button>`
+          : "") +
         `<button type="button" class="icon-btn colhead-remove" data-remove-pkg="${esc(p.id)}" data-version="${esc(p.version)}" ` +
         `aria-label="Remove ${esc(p.name)} ${esc(p.version)} from the repository" title="Remove from repository">${X_ICON}</button></th>`,
     )
@@ -372,7 +427,7 @@ function currentChanges() {
       const key = cellKey(agent.id, pkg.id);
       if (!selection.has(key)) continue;
       const { status, receipt } = cellInfo(agent, pkg);
-      const verb = { old: "Update", current: "Reinstall", failed: "Retry" }[status] ?? "Install";
+      const verb = { old: "Update", current: "Reinstall", failed: "Retry", found: "Replace" }[status] ?? "Install";
       out.push({ key, agent, pkg, verb, installed: !!receipt });
     }
   }
@@ -754,9 +809,11 @@ async function inspectNow(editing = false) {
 }
 
 // Opens the Add dialog, empty or with a path to check right away.
-function openAdd(path = "") {
+// `preset`: detected details to keep, such as the id when updating a package.
+function openAdd(path = "", preset = {}) {
   resetPreview();
-  overrides = {};
+  overrides = { ...preset };
+  for (const [key, id] of Object.entries(DETECTED_FIELDS)) $(id).value = preset[key] ?? "";
   $("add-detected").hidden = true;
   $("add-path").value = path;
   $("pick-folder").hidden = !desktop;
@@ -764,6 +821,17 @@ function openAdd(path = "") {
   if (!$("add-dialog").open) $("add-dialog").showModal();
   if (path) void inspectNow();
   else $("add-path").focus();
+}
+
+// Where the native pickers open: the folder of the last pick of that kind.
+// For a plugin that is the folder holding it, so the next version beside it
+// is one click away.
+const parentOf = (path) => path.replace(/[\\/]+$/, "").replace(/[\\/][^\\/]*$/, "") || path;
+function lastDir(kind) {
+  return remember.get(`dir:${kind}`) || undefined;
+}
+function rememberDir(kind, dir) {
+  if (dir) remember.set(`dir:${kind}`, dir);
 }
 
 function afterAdd(record, autoSelect) {
@@ -905,6 +973,7 @@ document.addEventListener("click", async (event) => {
     else if (d.open === "add") openAdd();
     else if (d.rename) openRename(d.rename);
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
+    else if (d.refreshPkg) await refreshPackage(d.refreshPkg);
     else if (d.close !== undefined) el.closest("dialog")?.close();
     else if (d.forget) {
       const { forget } = d;
@@ -974,12 +1043,14 @@ $("add-path").addEventListener("input", () => {
   inspectTimer = setTimeout(() => inspectNow(), 350);
 });
 $("pick-folder").addEventListener("click", async () => {
-  const path = await desktop?.pickFolder("Choose a plugin folder");
+  const path = await desktop?.pickFolder("Choose a plugin folder", lastDir("add"));
+  if (path) rememberDir("add", parentOf(path));
   if (path) openAdd(path);
 });
 $("pick-file").addEventListener("click", async () => {
   if (!desktop?.pickFile) return $("file-input").click();
-  const path = await desktop.pickFile("Choose a plugin file");
+  const path = await desktop.pickFile("Choose a plugin file", lastDir("add"));
+  if (path) rememberDir("add", parentOf(path));
   if (path) openAdd(path);
 });
 $("file-input").addEventListener("change", () => {
@@ -1006,6 +1077,7 @@ $("add-form").addEventListener("submit", async (event) => {
   $("add-submit").disabled = true;
   try {
     const record = await api("POST", "/api/packages/import", { path, overrides });
+    if (desktop) rememberDir("add", parentOf(path));
     $("add-dialog").close();
     afterAdd(record, $("add-select").checked);
   } catch (err) {
@@ -1016,7 +1088,8 @@ $("add-form").addEventListener("submit", async (event) => {
 });
 
 $("pick-installer-folder").addEventListener("click", async () => {
-  const path = await desktop?.pickFolder("Choose where to save the installer");
+  const path = await desktop?.pickFolder("Choose where to save the installer", $("installer-folder").value.trim() || lastDir("installer"));
+  rememberDir("installer", path);
   if (path) $("installer-folder").value = path;
 });
 $("save-installer").addEventListener("click", saveInstaller);

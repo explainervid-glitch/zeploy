@@ -444,6 +444,10 @@ There is one row per PC and one column per package (its latest version).
 
 - ◆ filled: the latest version is installed.
 - ◇ outline: an older version is installed. The cell shows which.
+- Dashed blue ◇ with "Found 1.0.0": the plugin is on that PC, but zeploy did
+  not install it (copied by hand, or installed before zeploy). Hover for where
+  it was found. Selecting the cell offers **Replace**: zeploy installs its
+  version over it, and from then on the cell is a normal ◆ or ◇.
 - Empty: not installed.
 - Pulsing: a job is queued or running.
 - "Failed" in red: the last job for that cell failed. Open it under
@@ -452,6 +456,14 @@ There is one row per PC and one column per package (its latest version).
 Each row also shows the PC's user, its IP address, whether it is online, and
 the Adobe and Blender versions its agent found. Connected PCs are listed even
 before you add a package.
+
+"Found" needs agent 0.4.0 or later. The agent looks in the CEP extensions
+folders (all users and this user), the After Effects `Scripts`, `ScriptUI
+Panels`, `Startup` and `Shutdown` folders, Animate's `Commands`, `Tools` and
+`WindowSWF`, and each Blender version's add-ons and extensions. It matches
+what it finds to packages by plugin id (bundle id, extension id, module or
+file name), so a CEP panel is found whatever its folder is called. A `.zxp`
+is found through the CEP panel it installed. A `.ccx` is not found.
 
 ### Install or update
 
@@ -468,8 +480,20 @@ before you add a package.
 4. Click the green button. It says what it does: **Install N**, **Update N**,
    **Reinstall N**, or **Apply N** for a mix.
 
-Updating is the same: add the new version, then install it on the PCs that
-show ◇. Files the old version installed and the new one does not are removed.
+Updating is the same: get the new version into zeploy, then install it on
+the PCs that show ◇. Files the old version installed and the new one does not
+are removed.
+
+To get a new version into zeploy, hover over the package name and click
+**↻**. zeploy reads the folder or file the package was added from again. If
+it holds a newer version, that version is added right away; if something is
+missing (a script without a version) or different, the Add dialog opens on it.
+The ↻ button shows for packages added from a folder or file once this
+feature exists; add an older package once more to give it one. Dropped files
+in a browser have no folder to read again.
+
+**Folder** and **File** in the Add dialog open where you last picked a
+plugin, so the next version beside it is one click away.
 
 A PC that is off gets the job when its agent connects again. Until then the job
 is queued; open it under **Activity** to cancel it.
@@ -772,7 +796,9 @@ Done:
   developer-link safety for CEP and Blender.
 - **Phase 2:** admin app (Electron), agents on team PCs, authenticated jobs,
   one-click installer, PC renaming.
-- **Phase 3, started:** agent self-update from the admin app (0.3.0).
+- **Phase 3, started:** agent self-update from the admin app (0.3.0);
+  plugins found on PCs without zeploy, and updating a package from its
+  folder (0.4.0).
 
 Planned for phase 3:
 

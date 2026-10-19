@@ -179,6 +179,12 @@ export const agentStateSchema = z.object({
   adobe: z.array(z.object({ app: z.string(), version: z.string() })),
   blender: z.array(z.string()),
   receipts: z.array(z.object({ id: z.string(), version: z.string(), installedAt: z.string() })),
+  // Plugins found in the install folders, installed by zeploy or not, keyed
+  // like packages ("cep:com.colosave.panel"). Absent from agents before 0.4.0.
+  found: z
+    .array(z.object({ key: z.string().max(300), version: z.string().max(64).nullable(), where: z.string().max(200) }))
+    .max(500)
+    .optional(),
 });
 
 export const agentMessageSchema = z.discriminatedUnion("type", [

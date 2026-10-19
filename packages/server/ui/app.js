@@ -161,8 +161,26 @@ function agentDetails(agent) {
     agent.label ? `${agent.hostname}, ${agent.address}` : agent.address,
     agent.online ? `Online, user ${agent.user}` : `Offline, last seen ${relTime(agent.lastSeen)}`,
     agentApps(agent),
+    `Agent ${agent.agentVersion}`,
   ].join("\n");
 }
+
+const isAgentJob = (job) => job.action === "updateAgent";
+
+// Where a PC's agent stands against the zeploy-agent.exe the admin app has:
+// null when it is up to date (or the admin app has no exe).
+function agentUpdate(agent) {
+  const target = state.agentBuild?.version;
+  if (!target || compareSemver(agent.agentVersion, target) >= 0) return null;
+  return {
+    target,
+    // Agents before 0.3.0 cannot update themselves.
+    canUpdate: (agent.features ?? []).includes("self-update"),
+    job: state.jobs.find((j) => j.agentId === agent.id && isAgentJob(j) && ACTIVE.has(j.status)) ?? null,
+  };
+}
+
+const agentsToUpdate = () => state.agents.filter((a) => agentUpdate(a)?.canUpdate && !agentUpdate(a).job);
 
 function sortedAgents() {
   return [...state.agents].sort((a, b) => b.online - a.online || nameOf(a).localeCompare(nameOf(b)));
@@ -174,7 +192,7 @@ const isCancelled = (job) => job.status === "failed" && job.error === "cancelled
 // What a PC has of a package, and what zeploy is doing about it.
 function cellInfo(agent, pkg) {
   const receipt = agent.state?.receipts.find((r) => r.id === pkg.id) ?? null;
-  const jobs = state.jobs.filter((j) => j.agentId === agent.id && j.packageId === pkg.id && !isCancelled(j));
+  const jobs = state.jobs.filter((j) => j.agentId === agent.id && j.packageId === pkg.id && !isAgentJob(j) && !isCancelled(j));
   const active = jobs.find((j) => ACTIVE.has(j.status));
   const last = jobs.find((j) => !ACTIVE.has(j.status));
   let status;
@@ -228,6 +246,26 @@ function renderFilters() {
     const count = n ? `<span class="n${f.id === "failed" ? " err" : ""}">${n}</span>` : "";
     return `<button type="button" class="filter" data-filter="${f.id}" aria-pressed="${filter === f.id}">${f.label}${count}</button>`;
   }).join("");
+
+  const outdated = agentsToUpdate();
+  const button = $("update-agents");
+  button.hidden = outdated.length === 0;
+  button.textContent = `Update ${outdated.length === 1 ? "1 agent" : `${outdated.length} agents`} to ${state.agentBuild?.version}`;
+  button.title = `${listText(outdated.map(nameOf))}. A PC that is offline updates when it next connects.`;
+}
+
+// The agent's version when the PC should get a newer agent, and how.
+function agentTagHtml(agent) {
+  const u = agentUpdate(agent);
+  if (!u) return "";
+  if (u.job) {
+    return `<span class="agent-tag busy" title="Updating the agent to ${esc(u.target)}">Updating agent</span>`;
+  }
+  const title = u.canUpdate
+    ? `Agent ${agent.agentVersion}; ${u.target} is available`
+    : `Agent ${agent.agentVersion} cannot update itself. Save the installer under Connect PC and run it on this PC once; ` +
+      `from then on its agent updates from here.`;
+  return `<span class="agent-tag" title="${esc(title)}">Agent ${esc(agent.agentVersion)}</span>`;
 }
 
 function cellHtml(agent, pkg) {
@@ -261,11 +299,16 @@ function rowHtml(agent, pkgs) {
   const forget = agent.online
     ? ""
     : `<button type="button" class="link-btn" data-forget="${esc(agent.id)}" aria-label="Forget ${esc(nameOf(agent))}">Forget</button>`;
+  const u = agentUpdate(agent);
+  const update =
+    u?.canUpdate && !u.job
+      ? `<button type="button" class="link-btn" data-update-agent="${esc(agent.id)}" aria-label="Update the agent on ${esc(nameOf(agent))} to ${esc(u.target)}">Update agent</button>`
+      : "";
   return (
     `<tr class="${agent.online ? "" : "offline"}"><th scope="row" class="rowhead">` +
     `<div class="rowhead-in" title="${esc(agentDetails(agent))}">` +
-    `<span class="dot${agent.online ? " on" : ""}"></span><span class="pc-name">${esc(nameOf(agent))}</span>${warn}` +
-    `<span class="row-actions"><button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Rename ${esc(nameOf(agent))}">Rename</button>${forget}</span>` +
+    `<span class="dot${agent.online ? " on" : ""}"></span><span class="pc-name">${esc(nameOf(agent))}</span>${warn}${agentTagHtml(agent)}` +
+    `<span class="row-actions">${update}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Rename ${esc(nameOf(agent))}">Rename</button>${forget}</span>` +
     `</div></th>${pkgs.map((p) => cellHtml(agent, p)).join("")}</tr>`
   );
 }
@@ -344,6 +387,7 @@ function renderChanges() {
 }
 
 function jobTitle(job, names) {
+  if (isAgentJob(job)) return `Agent ${job.version}`;
   const name = names.get(job.packageId) ?? job.packageId;
   return job.action === "install" ? `${name}${job.version ? ` ${job.version}` : ""}` : `Remove ${name}`;
 }
@@ -510,9 +554,18 @@ async function runAction(action) {
   toast(`${what} sent to ${pcs(sent)}.` + (skipped ? `\nSkipped ${skipped} not installed.` : ""));
 }
 
+// Queues an agent update for each PC; offline PCs update when they connect.
+async function updateAgents(agentIds) {
+  await api("POST", "/api/agents/update", { agentIds });
+  tab = "activity";
+  render();
+  toast(`Agent update sent to ${pcs(agentIds.length)}.`);
+}
+
 async function retryJob(id, closeApp) {
   const job = state.jobs.find((j) => j.id === id);
   if (!job) return;
+  if (isAgentJob(job)) return updateAgents([job.agentId]);
   await api("POST", "/api/jobs", {
     action: job.action,
     packageId: job.packageId,
@@ -757,6 +810,7 @@ document.addEventListener("click", async (event) => {
     else if (d.open === "connect") openConnect();
     else if (d.open === "add") openAdd();
     else if (d.rename) openRename(d.rename);
+    else if (d.updateAgent) await updateAgents([d.updateAgent]);
     else if (d.close !== undefined) el.closest("dialog")?.close();
     else if (d.forget) {
       const agent = state.agents.find((a) => a.id === d.forget);
@@ -789,6 +843,9 @@ $("clear-selection").addEventListener("click", () => {
   selection.clear();
   render();
 });
+$("update-agents").addEventListener("click", () =>
+  updateAgents(agentsToUpdate().map((a) => a.id)).catch((err) => toast(err.message, true)),
+);
 
 $("add-path").addEventListener("input", () => {
   clearTimeout(inspectTimer);

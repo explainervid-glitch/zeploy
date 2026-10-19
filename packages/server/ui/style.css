@@ -152,6 +152,8 @@ p { margin: 0; }
 
 /* ---- filters ------------------------------------------------------------------- */
 
+.main-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.main-bar #update-agents { margin-left: auto; }
 .filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .filter {
   display: inline-flex;
@@ -204,6 +206,8 @@ p { margin: 0; }
 .rowhead-in { position: relative; display: flex; align-items: center; gap: 10px; height: 56px; min-width: 0; }
 .pc-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .warn-icon { display: inline-flex; color: var(--warn); flex: none; }
+.agent-tag { flex: none; font-size: 11px; color: var(--warn); white-space: nowrap; }
+.agent-tag.busy { color: var(--accent); }
 /* Overlays the end of the row head on hover or focus, so it never squeezes the name. */
 .row-actions {
   position: absolute;

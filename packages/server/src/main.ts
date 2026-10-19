@@ -29,8 +29,12 @@ const server = await startServer({
   port: values.port ? Number(values.port) : DEFAULT_PORT,
   host: values.host,
   uiDir: join(import.meta.dirname, "..", "ui"),
-  // Built by npm run build:agent.
-  agentExe: join(import.meta.dirname, "..", "..", "..", "dist", "zeploy-agent", "zeploy-agent.exe"),
+  // Built by npm run build:agent (same folder as scripts/build.mjs uses).
+  agentExe: join(
+    process.env["ZEPLOY_BUILD_DIR"] ?? join(process.env["LOCALAPPDATA"] ?? join(import.meta.dirname, "..", "..", "..", "dist"), "zeploy-build"),
+    "zeploy-agent",
+    "zeploy-agent.exe",
+  ),
 });
 console.log(`Admin UI: ${server.adminUrl}`);
 

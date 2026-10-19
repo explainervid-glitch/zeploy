@@ -41,10 +41,17 @@ export const challengeSchema = z.object({
   nonce: z.string().min(16),
 });
 
+// What an agent can do beyond the jobs every agent understands. The server
+// only sends a job to an agent that lists its feature, so an older agent
+// never receives a message it cannot parse.
+export const FEATURE_SELF_UPDATE = "self-update";
+
 export const agentInfoSchema = z.object({
   hostname: z.string().max(256),
   user: z.string().max(256),
   agentVersion: z.string().max(64),
+  // Absent from agents before 0.3.0.
+  features: z.array(z.string().max(32)).max(16).optional(),
 });
 
 export const helloSchema = z.object({
@@ -148,6 +155,16 @@ export const jobSpecSchema = z.discriminatedUnion("action", [
     action: z.literal("uninstall"),
     packageId: z.string(),
     options: jobOptionsSchema,
+  }),
+  // Replace the agent with a newer zeploy-agent.exe. Only for agents with
+  // FEATURE_SELF_UPDATE. The new agent finishes the job by connecting with
+  // `version`; the old one sends jobDone only when the update failed.
+  z.object({
+    id: z.string(),
+    action: z.literal("updateAgent"),
+    version: z.string().max(64),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    downloadPath: z.string().startsWith("/download/"),
   }),
 ]);
 

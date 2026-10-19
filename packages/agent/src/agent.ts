@@ -1,12 +1,12 @@
 // The agent on each team PC: keeps a WebSocket open to the admin server,
-// runs the install and uninstall jobs it is sent, and reports what is
-// installed. Jobs run one at a time through packages/core.
+// runs the install, uninstall and agent update jobs it is sent, and reports
+// what is installed. Jobs run one at a time through packages/core.
 
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -18,8 +18,8 @@ import {
   type ExecuteOptions,
 } from "../../core/src/index.ts";
 import * as P from "../../protocol/src/index.ts";
-
-export const AGENT_VERSION = "0.2.0";
+import type { AgentUpdater } from "./update.ts";
+import { AGENT_VERSION } from "./version.ts";
 
 export type AgentStatus = "connecting" | "connected" | "disconnected" | "rejected";
 
@@ -30,6 +30,11 @@ export interface AgentOptions {
   agentId: string;
   log?: (line: string) => void;
   onStatus?: (status: AgentStatus) => void;
+  // Replaces this agent with a newer exe (see update.ts). Without one, as
+  // when run from source, the agent does not offer to update itself.
+  updater?: AgentUpdater;
+  // Called once a newer agent has taken over; the process should exit.
+  onReplaced?: () => void;
   // Test seams.
   detect?: () => Promise<Environment>;
   exec?: Pick<ExecuteOptions, "processes" | "kill">;
@@ -55,6 +60,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
     hostname: hostname(),
     user: userInfo().username,
     agentVersion: AGENT_VERSION,
+    features: options.updater ? [P.FEATURE_SELF_UPDATE] : [],
     ...options.info,
   };
 
@@ -64,6 +70,8 @@ export function startAgent(options: AgentOptions): RunningAgent {
   let backoff = 1000;
   let retryTimer: NodeJS.Timeout | null = null;
   let jobs: Promise<void> = Promise.resolve();
+  // Set while a newer agent is taking over this PC.
+  let handingOver = false;
 
   const setStatus = (s: AgentStatus) => options.onStatus?.(s);
 
@@ -91,13 +99,11 @@ export function startAgent(options: AgentOptions): RunningAgent {
     }
   }
 
-  // Streams the zip to disk, hashing as it goes, and refuses it unless the
-  // hash is the one in the (authenticated) job message.
-  async function download(job: Extract<P.JobSpec, { action: "install" }>, env: Environment): Promise<string> {
-    const dir = join(env.home, "downloads");
-    await mkdir(dir, { recursive: true });
-    const file = join(dir, `${job.packageId}-${job.version}-${job.id.slice(0, 8)}.zip`);
-    const res = await fetch(base + job.downloadPath);
+  // Streams a package zip or agent exe to disk, hashing as it goes, and
+  // refuses it unless the hash is the one in the (authenticated) job message.
+  async function download(path: string, sha256: string, file: string): Promise<string> {
+    await mkdir(dirname(file), { recursive: true });
+    const res = await fetch(base + path);
     if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status}`);
     const hash = createHash("sha256");
     await pipeline(
@@ -111,11 +117,31 @@ export function startAgent(options: AgentOptions): RunningAgent {
       createWriteStream(file),
     );
     const actual = hash.digest("hex");
-    if (actual !== job.sha256) {
+    if (actual !== sha256) {
       await rm(file, { force: true });
-      throw new Error(`downloaded package does not match its SHA-256 (got ${actual})`);
+      throw new Error(`downloaded file does not match its SHA-256 (got ${actual})`);
     }
     return file;
+  }
+
+  // Hands this PC over to the downloaded agent. While that runs, a dropped
+  // connection is not retried: the admin server drops it on purpose once
+  // the new agent connects.
+  async function updateSelf(file: string, version: string, jobLog: (line: string) => void): Promise<void> {
+    if (!options.updater) throw new Error("this agent cannot update itself (it runs from source)");
+    handingOver = true;
+    try {
+      await options.updater.replace(file, version, jobLog);
+    } catch (err) {
+      handingOver = false;
+      if (!socket && !stopped) connect();
+      throw err;
+    }
+  }
+
+  function describe(job: P.JobSpec): string {
+    if (job.action === "updateAgent") return `update agent ${info.agentVersion} to ${job.version} on ${info.hostname}`;
+    return `${job.action} ${job.packageId}${job.action === "install" ? ` ${job.version}` : ""} on ${info.hostname}`;
   }
 
   async function runJob(job: P.JobSpec): Promise<void> {
@@ -124,29 +150,45 @@ export function startAgent(options: AgentOptions): RunningAgent {
       send({ type: "jobLog", jobId: job.id, line });
     };
     send({ type: "jobStarted", jobId: job.id });
-    jobLog(`${job.action} ${job.packageId}${job.action === "install" ? ` ${job.version}` : ""} on ${info.hostname}`);
+    jobLog(describe(job));
 
-    let zip: string | null = null;
+    let downloaded: string | null = null;
+    let replaced = false;
     try {
       const env = await detect();
-      const exec: ExecuteOptions = { dryRun: false, ifRunning: job.options.ifRunning, log: jobLog, ...options.exec };
-      if (job.action === "install") {
-        zip = await download(job, env);
-        await installPackage(zip, env, {
-          ...exec,
-          expectedSha256: job.sha256,
-          plan: { scope: job.options.scope, replaceDevLinks: job.options.replaceDevLinks },
-        });
+      const file = (stem: string, ext: string) => join(env.home, "downloads", `${stem}-${job.id.slice(0, 8)}${ext}`);
+      if (job.action === "updateAgent") {
+        downloaded = await download(job.downloadPath, job.sha256, file(`zeploy-agent-${job.version}`, ".exe"));
+        await updateSelf(downloaded, job.version, jobLog);
+        // No jobDone: the new agent finishes the job by connecting.
+        replaced = true;
       } else {
-        await uninstallPackage(job.packageId, env, exec);
+        const exec: ExecuteOptions = { dryRun: false, ifRunning: job.options.ifRunning, log: jobLog, ...options.exec };
+        if (job.action === "install") {
+          downloaded = await download(job.downloadPath, job.sha256, file(`${job.packageId}-${job.version}`, ".zip"));
+          await installPackage(downloaded, env, {
+            ...exec,
+            expectedSha256: job.sha256,
+            plan: { scope: job.options.scope, replaceDevLinks: job.options.replaceDevLinks },
+          });
+        } else {
+          await uninstallPackage(job.packageId, env, exec);
+        }
+        send({ type: "jobDone", jobId: job.id, ok: true });
       }
-      send({ type: "jobDone", jobId: job.id, ok: true });
     } catch (err) {
       const message = (err as Error).message;
       jobLog(`error: ${message}`);
       send({ type: "jobDone", jobId: job.id, ok: false, error: message });
     } finally {
-      if (zip) await rm(zip, { force: true });
+      if (downloaded) await rm(downloaded, { force: true });
+    }
+    if (replaced) {
+      stopped = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      socket?.close();
+      options.onReplaced?.();
+      return;
     }
     await sendState();
   }
@@ -229,7 +271,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
       } else {
         setStatus("disconnected");
       }
-      if (!stopped) {
+      if (!stopped && !handingOver) {
         retryTimer = setTimeout(connect, backoff);
         backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
       }

@@ -82,6 +82,7 @@ async function jobFinished(id: string) {
 before(async () => {
   root = await makeTmp();
   await write(join(root, "build", "zeploy-agent.exe"), "fake agent");
+  await write(join(root, "build", "zeploy-agent.json"), JSON.stringify({ version: "9.0.0" }));
   server = await startServer({
     dataDir: join(root, "admin"),
     port: 0,
@@ -213,6 +214,94 @@ test("the admin API saves a one-click installer with this server's team token", 
 
   const bad = await api("POST", "/api/installer", { folder, server: "192.168.1.72 & calc" });
   assert.equal(bad.status, 400);
+});
+
+// An agent with a fake updater: instead of swapping exes, replace() starts a
+// second agent with the same PC id that reports the new version.
+function launchUpdatableAgent(id: string, replace: (file: string, version: string) => Promise<void>) {
+  let replaced = false;
+  const agent = startAgent({
+    serverUrl: `http://127.0.0.1:${server.port}`,
+    token: server.store.data.enrollToken,
+    agentId: id,
+    info: { hostname: "UPDATE-PC", user: "tester", agentVersion: "8.0.0" },
+    detect: async () => fakeEnv(join(root, id)),
+    exec: { processes: noProcesses },
+    log: () => {},
+    updater: { replace: (file, version) => replace(file, version) },
+    onReplaced: () => (replaced = true),
+  });
+  agents.push(agent);
+  return { agent, wasReplaced: () => replaced };
+}
+
+async function agentRecord(id: string, check: (a: any) => boolean) {
+  return waitFor(`agent ${id}`, async () => {
+    const { body } = await api("GET", "/api/state");
+    const a = body.agents.find((x: any) => x.id === id);
+    return a && check(a) ? a : null;
+  });
+}
+
+test("an agent updates itself to the exe the admin app has", async () => {
+  const { body: state } = await waitFor("agent build", async () => {
+    const r = await api("GET", "/api/state");
+    return r.body.agentBuild ? r : null;
+  });
+  assert.deepEqual(state.agentBuild, { version: "9.0.0" });
+
+  // agent-test-0001 has no updater, as when run from source.
+  const refused = await api("POST", "/api/agents/update", { agentIds: ["agent-test-0001"] });
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /cannot update itself/);
+
+  const id = "agent-update-0001";
+  let downloaded = "";
+  const old = launchUpdatableAgent(id, async (file, version) => {
+    downloaded = await readFile(file, "utf8");
+    const next = startAgent({
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      token: server.store.data.enrollToken,
+      agentId: id,
+      info: { hostname: "UPDATE-PC", user: "tester", agentVersion: version },
+      detect: async () => fakeEnv(join(root, id)),
+      log: () => {},
+    });
+    agents.push(next);
+    await waitFor("new agent connected", async () => next.connected);
+  });
+  await agentRecord(id, (a) => a.online && a.features?.includes("self-update"));
+
+  const jobs = await api("POST", "/api/agents/update", { agentIds: [id] });
+  assert.equal(jobs.status, 200, JSON.stringify(jobs.body));
+  assert.equal(jobs.body[0].action, "updateAgent");
+  assert.equal(jobs.body[0].version, "9.0.0");
+
+  const done = await jobFinished(jobs.body[0].id);
+  assert.equal(done.status, "done", done.error);
+  assert.ok(done.log.some((l: string) => l.includes("agent 9.0.0 connected")));
+  assert.equal(downloaded, "fake agent", "the agent downloaded the admin's exe");
+  await waitFor("the old agent told to exit", async () => old.wasReplaced());
+  await agentRecord(id, (a) => a.online && a.agentVersion === "9.0.0");
+
+  const again = await api("POST", "/api/agents/update", { agentIds: [id] });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /already runs agent 9\.0\.0/);
+});
+
+test("a failed agent update keeps the old agent connected", async () => {
+  const id = "agent-update-0002";
+  launchUpdatableAgent(id, async () => {
+    throw new Error("the downloaded agent did not report version 9.0.0 (exit code 1)");
+  });
+  await agentRecord(id, (a) => a.online);
+
+  const jobs = await api("POST", "/api/agents/update", { agentIds: [id] });
+  const failed = await jobFinished(jobs.body[0].id);
+  assert.equal(failed.status, "failed");
+  assert.match(failed.error, /did not report version/);
+  const record = await agentRecord(id, (a) => a.online);
+  assert.equal(record.agentVersion, "8.0.0");
 });
 
 test("a download link only works with its job's token", async () => {

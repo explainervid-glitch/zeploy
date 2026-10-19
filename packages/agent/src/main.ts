@@ -5,14 +5,17 @@
 //   zeploy-agent configure --server ... --token ...
 //   zeploy-agent status
 //   zeploy-agent remove                                            (administrator terminal)
+//   zeploy-agent version
+//   zeploy-agent run --takeover <pid>                              (what an agent update starts)
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isSea } from "node:sea";
+import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { isElevated, migrateLegacyDir, run } from "../../core/src/index.ts";
-import { AGENT_VERSION, startAgent } from "./agent.ts";
+import { startAgent } from "./agent.ts";
 import { configPath, loadConfig, newAgentId, normalizeServerUrl, saveConfig } from "./config.ts";
 import {
   installedExePath,
@@ -23,6 +26,8 @@ import {
   startTask,
   TASK_NAME,
 } from "./task.ts";
+import { exeUpdater, isAlive, NEXT_EXE, OLD_EXE } from "./update.ts";
+import { AGENT_VERSION } from "./version.ts";
 
 const USAGE = `zeploy-agent ${AGENT_VERSION}
 
@@ -35,6 +40,8 @@ const USAGE = `zeploy-agent ${AGENT_VERSION}
   status
   remove
         Stop the agent and remove its Scheduled Task (administrator terminal).
+  version
+        Print the version.
 `;
 
 // Same folder packages/core uses for receipts. An agent from before the
@@ -101,23 +108,57 @@ async function checkServer(serverUrl: string): Promise<void> {
   }
 }
 
-async function cmdRun(values: { server?: string; token?: string }): Promise<void> {
+// zeploy-agent.old.exe stays locked until the agent it belonged to exits;
+// .new.exe is left only by an update that crashed half-way.
+async function removeUpdateLeftovers(oldPid: number | null): Promise<void> {
+  for (let i = 0; oldPid && isAlive(oldPid) && i < 240; i++) await sleep(500);
+  const dir = dirname(process.execPath);
+  for (const name of [OLD_EXE, NEXT_EXE]) await rm(join(dir, name), { force: true }).catch(() => {});
+}
+
+async function cmdRun(values: { server?: string; token?: string; takeover?: string }): Promise<void> {
   const config = await configured(values);
   if (!config.serverUrl || !config.token) {
     throw new Error(`not configured; run: zeploy-agent configure --server <ip> --token <team token>`);
   }
+  // Started by an agent update: the old agent keeps running, and keeps
+  // agent.pid, until this one has connected.
+  const takeover = values.takeover ? Number(values.takeover) : null;
   const other = runningPid();
-  if (other) throw new Error(`another agent is already running (pid ${other})`);
+  if (other && other !== takeover) throw new Error(`another agent is already running (pid ${other})`);
   const log = makeLogger();
-  writeFileSync(pidFile, String(process.pid));
+  if (!takeover) writeFileSync(pidFile, String(process.pid));
 
-  log(`zeploy-agent ${AGENT_VERSION} starting, server ${config.serverUrl}`);
-  const agent = startAgent({ serverUrl: config.serverUrl, token: config.token, agentId: config.agentId!, log });
+  log(`zeploy-agent ${AGENT_VERSION} starting, server ${config.serverUrl}${takeover ? `, taking over from pid ${takeover}` : ""}`);
+  // Only the built exe can replace itself; from source, update with git.
+  const updater = isSea() ? exeUpdater({ exe: process.execPath, pidFile }) : undefined;
+  if (updater && !takeover) void removeUpdateLeftovers(null);
+  let tookOver = !takeover;
+  const agent = startAgent({
+    serverUrl: config.serverUrl,
+    token: config.token,
+    agentId: config.agentId!,
+    log,
+    updater,
+    onStatus: (status) => {
+      if (status !== "connected" || tookOver) return;
+      tookOver = true;
+      // The old agent waits for this, then exits.
+      writeFileSync(pidFile, String(process.pid));
+      log(`took over from pid ${takeover}`);
+      void removeUpdateLeftovers(takeover);
+    },
+    onReplaced: () => {
+      log("a newer agent took over; exiting");
+      process.exit(0);
+    },
+  });
   const shutdown = () => {
     log("stopping");
     void agent.stop().finally(() => {
       try {
-        unlinkSync(pidFile);
+        // After an update, agent.pid belongs to the new agent.
+        if (Number(readFileSync(pidFile, "utf8")) === process.pid) unlinkSync(pidFile);
       } catch {}
       process.exit(0);
     });
@@ -185,6 +226,7 @@ async function cmdRemove(): Promise<void> {
 async function cmdStatus(): Promise<void> {
   const config = await loadConfig();
   const pid = runningPid();
+  console.log(`version  ${AGENT_VERSION}`);
   console.log(`config   ${configPath()}`);
   console.log(`server   ${config.serverUrl ?? "(not set)"}`);
   console.log(`token    ${config.token ? "set" : "(not set)"}`);
@@ -199,11 +241,21 @@ async function main(): Promise<void> {
     options: {
       server: { type: "string" },
       token: { type: "string" },
+      takeover: { type: "string" },
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean" },
     },
   });
   const [command] = positionals;
+  if (values.version) {
+    console.log(AGENT_VERSION);
+    return;
+  }
   switch (command) {
+    case "version":
+      // An agent update runs this on the downloaded exe before switching to it.
+      console.log(AGENT_VERSION);
+      return;
     case "run":
       return cmdRun(values);
     case "setup":

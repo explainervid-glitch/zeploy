@@ -224,9 +224,14 @@ running, and the log path.
 Stops the agent and deletes the Scheduled Task. The exe and `agent.json`
 stay, and plugins it installed stay installed.
 
-- **Update the agent:** rebuild (`npm run build`), save the installer again
-  and run it on each PC, or run `setup` again with the new exe. It stops the
-  old agent, replaces the exe and starts the new one.
+- **Update the agent:** bump the version, rebuild (`npm run build`) and restart
+  the admin app, then use
+  [Update the agents](#update-the-agents). An agent before 0.3.0 needs the
+  installer once: save it again and run it on the PC, or run `setup` again with
+  the new exe. Setup stops the old agent, replaces the exe and starts the new
+  one.
+- **After an update** the new agent runs outside the Scheduled Task until the
+  user next signs in; then the task starts it as usual.
 - **Admin PC moved to another address:** save the installer again (it holds
   the new address) and run it on each team PC, or run `setup` again with the
   new `--server`.
@@ -431,6 +436,27 @@ Select the cells and click **Remove from PCs**. The agent removes exactly what
 zeploy installed, using its record of the install. Cells where the package is
 not installed are skipped.
 
+### Update the agents
+
+When the admin app holds a newer `zeploy-agent.exe` than a PC runs (after a
+rebuild with a higher version), that PC's row shows its agent version, such as
+"Agent 0.3.0", in orange.
+
+- **Update N agents to x.y.z** (above the table) updates every PC that can.
+- **Update agent** (next to a PC's name) updates one PC.
+
+Like any job, the update waits for a PC that is off, and shows under
+**Activity** as "Agent x.y.z". On the PC, the agent downloads the new exe,
+checks its SHA-256 and that it starts, swaps it in for
+`C:\Program Files\zeploy\zeploy-agent.exe` and starts it. The new agent
+connects, and the old one exits. Jobs never stop in between. If the new agent
+does not connect within a minute, the old exe goes back, the old agent keeps
+running and the job fails.
+
+Agents before 0.3.0 cannot update themselves: their row says so when you
+hover over the version. Save the installer under **Connect PC** and run it on
+those PCs once. From then on they update from the admin app.
+
 ### Other actions
 
 - **Activity** lists every job. Click one to see its log.
@@ -541,10 +567,12 @@ zeploy list                            # packages installed by zeploy on this PC
 | Command | Meaning |
 | --- | --- |
 | `setup --server <ip[:port]> --token <token>` | Install on this PC and start (administrator) |
-| `status` | Show settings and whether the agent runs |
+| `status` | Show the version, settings and whether the agent runs |
 | `remove` | Stop the agent and delete its Scheduled Task (administrator) |
 | `configure --server ... --token ...` | Change the saved settings only; the agent reads them at start |
 | `run` | Run in the foreground; this is what the Scheduled Task starts |
+| `version` | Print the version |
+| `run --takeover <pid>` | What an agent update starts: connect, then take over from the agent with that pid |
 
 ### Safety rules
 
@@ -571,7 +599,8 @@ zeploy list                            # packages installed by zeploy on this PC
   from the LAN.
 - A package download needs a one-time link that belongs to its job. The agent
   installs the package only if its SHA-256 matches the one in the
-  authenticated job.
+  authenticated job. An agent update works the same way: the agent runs the
+  new exe only if its SHA-256 matches.
 - The admin UI and its API answer only on the admin PC itself, and only with a
   token that changes every time the admin app starts.
 - Traffic is not encrypted: another PC on the LAN could read a package while
@@ -607,8 +636,8 @@ the root and the packages import each other by relative path.
 | `npm test` | All tests (`node --test`) |
 | `npm run typecheck` | TypeScript check, no output files |
 | `npm run build` | Agent exe, then the admin app |
-| `npm run build:agent` | `dist\zeploy-agent\zeploy-agent.exe` |
-| `npm run build:admin` | `dist\admin` and the runnable copy in `%LOCALAPPDATA%\Programs\zeploy-admin` |
+| `npm run build:agent` | `%LOCALAPPDATA%\zeploy-build\zeploy-agent\zeploy-agent.exe`, and `zeploy-agent.json` with its version |
+| `npm run build:admin` | `%LOCALAPPDATA%\zeploy-build\admin` and the runnable copy in `%LOCALAPPDATA%\Programs\zeploy-admin` |
 | `npm run admin` | `build:admin`, then start the admin app |
 | `npm run server` | Admin server without Electron (open `http://127.0.0.1:7420/`) |
 | `npm run agent -- <command>` | Agent from source, e.g. `status` or `run` (not `setup`, which needs the built exe) |
@@ -642,11 +671,19 @@ Environment variables for running test copies next to the real ones:
 | `ZEPLOY_ADMIN_HOST` | all interfaces; `127.0.0.1` keeps a test server off the LAN |
 | `ZEPLOY_ADMIN_DATA` | `%APPDATA%\zeploy-admin` |
 | `ZEPLOY_ADMIN_OUT` | `%LOCALAPPDATA%\Programs\zeploy-admin` (where `npm run admin` puts the app) |
+| `ZEPLOY_BUILD_DIR` | `%LOCALAPPDATA%\zeploy-build` (build output; kept off the network share, where the NAS locks deleted folders) |
 | `ZEPLOY_AGENT_CONFIG` | `%ProgramData%\zeploy\agent.json` |
 | `ZEPLOY_HOME` | `%LOCALAPPDATA%\zeploy` (install records, staging, agent log) |
 
 The admin app allows one instance at a time. To run a test copy with
 `ZEPLOY_ADMIN_DATA` and `ZEPLOY_PORT`, close the real one first.
+
+The version lives in `packages/agent/src/version.ts`, for both the agent and
+the admin app. The admin app offers an agent update to every PC that runs an
+older version than the exe it holds, so bump the version whenever the agent
+changes. The admin server reads the exe's version from the
+`zeploy-agent.json` the build writes next to it, so the admin app never offers
+a version it does not have.
 
 ## Status and roadmap
 
@@ -656,10 +693,10 @@ Done:
   developer-link safety for CEP and Blender.
 - **Phase 2:** admin app (Electron), agents on team PCs, authenticated jobs,
   one-click installer, PC renaming.
+- **Phase 3, started:** agent self-update from the admin app (0.3.0).
 
 Planned for phase 3:
 
-- Agent self-update from the admin app
 - Rolling a package back to an earlier version
 - Encrypted connections (TLS)
 - Finding the admin app on the LAN automatically, without typing its address

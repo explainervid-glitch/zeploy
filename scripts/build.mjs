@@ -1,26 +1,27 @@
-// Builds the deliverables:
+// Builds the deliverables into <build>, by default %LOCALAPPDATA%\zeploy-build:
 //   node scripts/build.mjs admin [--launch]
-//       dist/admin (the app files) and a runnable copy with the Electron
+//       <build>\admin (the app files) and a runnable copy with the Electron
 //       runtime at %LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe
 //   node scripts/build.mjs agent
-//       dist/zeploy-agent/zeploy-agent.exe (Node single executable)
+//       <build>\zeploy-agent\zeploy-agent.exe (Node single executable)
 //
 // The sources are TypeScript run directly by Node during development; esbuild
 // bundles them into one CommonJS file for Electron and for the Node SEA blob.
 //
-// Electron cannot start from a network share: Chromium's sandboxed GPU and
-// renderer processes fail to launch from a mapped drive such as Z:. That is
-// why the runnable admin app is assembled on a local disk.
+// Build output stays on a local disk. On the network share the NAS keeps
+// just-deleted folders locked for minutes (EPERM / EEXIST on the next build),
+// and Electron cannot start from a mapped drive such as Z: at all.
 
 import { execFileSync, spawn } from "node:child_process";
 import { copyFile, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { AGENT_VERSION as version } from "../packages/agent/src/version.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const r = (...p) => join(root, ...p);
-const version = "0.2.0";
+const buildDir = process.env.ZEPLOY_BUILD_DIR ?? join(process.env.LOCALAPPDATA ?? join(root, "dist"), "zeploy-build");
 const adminInstallDir =
   process.env.ZEPLOY_ADMIN_OUT ?? join(process.env.LOCALAPPDATA ?? root, "Programs", "zeploy-admin");
 
@@ -61,7 +62,7 @@ async function assembleAdmin(appDir) {
 }
 
 async function buildAdmin() {
-  const out = r("dist", "admin");
+  const out = join(buildDir, "admin");
   await rm(out, { recursive: true, force: true });
   await build({
     entryPoints: [r("packages", "admin", "src", "main.ts")],
@@ -76,13 +77,20 @@ async function buildAdmin() {
   });
   await cp(r("packages", "server", "ui"), join(out, "ui"), { recursive: true });
   await copyFile(r("packages", "admin", "preload.cjs"), join(out, "preload.cjs"));
-  // The admin app hands this exe out with the one-click installer.
-  const agentExe = r("dist", "zeploy-agent", "zeploy-agent.exe");
+  // The admin app hands this exe out with the one-click installer and to
+  // agents that update themselves; zeploy-agent.json holds its version.
+  const agentExe = join(buildDir, "zeploy-agent", "zeploy-agent.exe");
   if (await stat(agentExe).then(() => true, () => false)) {
     await mkdir(join(out, "agent"), { recursive: true });
     await copyFile(agentExe, join(out, "agent", "zeploy-agent.exe"));
+    const sidecar = join(buildDir, "zeploy-agent", "zeploy-agent.json");
+    if (await stat(sidecar).then(() => true, () => false)) {
+      await copyFile(sidecar, join(out, "agent", "zeploy-agent.json"));
+    } else {
+      console.warn(`${sidecar} not found: run npm run build:agent again, or PCs are not offered agent updates`);
+    }
   } else {
-    console.warn("dist/zeploy-agent/zeploy-agent.exe not found: run npm run build:agent first, or the admin app cannot save installers");
+    console.warn(`${agentExe} not found: run npm run build:agent first, or the admin app cannot save installers`);
   }
   await writeFile(
     join(out, "package.json"),
@@ -96,7 +104,7 @@ async function buildAdmin() {
 }
 
 async function buildAgent() {
-  const out = r("dist", "zeploy-agent");
+  const out = join(buildDir, "zeploy-agent");
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   const bundle = join(out, "agent.cjs");
@@ -134,7 +142,11 @@ async function buildAgent() {
   );
   await rm(blob);
   await rm(seaConfig);
-  console.log(`built ${exe}`);
+  // The admin server reads the version of the exe it hands out from here.
+  // Asking the exe itself also proves it starts.
+  const built = execFileSync(exe, ["version"], { encoding: "utf8" }).trim();
+  await writeFile(join(out, "zeploy-agent.json"), JSON.stringify({ version: built }, null, 2) + "\n");
+  console.log(`built ${exe} (${built})`);
 }
 
 // The agent first: the admin app bundles it.

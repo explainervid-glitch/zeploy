@@ -18,9 +18,18 @@ import { pipeline } from "node:stream/promises";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import * as P from "../../protocol/src/index.ts";
+import { readAgentBuild, type AgentBuild } from "./agent-build.ts";
 import { writeInstaller } from "./installer.ts";
-import { HttpError, importPackage, inspectPackage, latestPackage, packagesDir, removePackage } from "./packages.ts";
-import { MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
+import {
+  compareSemver,
+  HttpError,
+  importPackage,
+  inspectPackage,
+  latestPackage,
+  packagesDir,
+  removePackage,
+} from "./packages.ts";
+import { AGENT_PACKAGE_ID, MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
 
 export interface ServerOptions {
   dataDir: string;
@@ -30,7 +39,9 @@ export interface ServerOptions {
   host?: string;
   // Folder holding the admin UI (index.html, app.js, style.css).
   uiDir?: string;
-  // zeploy-agent.exe, copied next to the one-click installer it saves.
+  // zeploy-agent.exe, copied next to the one-click installer it saves and
+  // sent to agents that update themselves. Its version is read from the
+  // zeploy-agent.json next to it.
   agentExe?: string;
   log?: (line: string) => void;
 }
@@ -53,6 +64,9 @@ interface Conn {
 
 const MAX_UPLOAD_BYTES = 1024 ** 3;
 const HEARTBEAT_MS = 20_000;
+// How long an updated agent may take to connect after the old one dropped.
+const RESTART_TIMEOUT_MS = 2 * 60_000;
+const isActive = (job: JobRecord) => job.status === "queued" || job.status === "sent" || job.status === "running";
 const UI_FILE = /^[a-z0-9_-]+\.(html|js|css|svg|png|ico)$/i;
 const CONTENT_TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -106,8 +120,11 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const store = await Store.open(options.dataDir);
   const adminToken = P.randomToken();
   const conns = new Map<string, Conn>();
-  const downloads = new Map<string, { token: string; file: string }>();
+  const downloads = new Map<string, { token: string; file: string; type: string }>();
   const sseClients = new Set<ServerResponse>();
+  // Agent updates waiting for the new agent to connect, by job id.
+  const restartTimers = new Map<string, NodeJS.Timeout>();
+  let agentBuild: AgentBuild | null = null;
   let port = options.port ?? P.DEFAULT_PORT;
 
   // Jobs that were in flight when the server last stopped will never finish.
@@ -128,6 +145,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       port,
       addresses: lanAddresses(),
       installerReady: !!options.agentExe && existsSync(options.agentExe),
+      // The agent version PCs can update to; null until the exe is hashed.
+      agentBuild: agentBuild ? { version: agentBuild.version } : null,
       agents: Object.values(store.data.agents).map((a) => ({
         ...a,
         online: conns.has(a.id),
@@ -157,6 +176,15 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     for (const res of sseClients) res.write(data);
   }
 
+  // Re-reads zeploy-agent.exe when it changed, as after npm run build.
+  async function refreshAgentBuild(): Promise<AgentBuild | null> {
+    const build = await readAgentBuild(options.agentExe, agentBuild);
+    const differs = build?.version !== agentBuild?.version || build?.sha256 !== agentBuild?.sha256;
+    agentBuild = build;
+    if (differs) changed();
+    return build;
+  }
+
   // ---- jobs -------------------------------------------------------------------
 
   function finishJob(job: JobRecord, ok: boolean, error?: string): void {
@@ -164,7 +192,24 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     job.error = error;
     job.finishedAt = new Date().toISOString();
     downloads.delete(job.id);
+    clearTimeout(restartTimers.get(job.id));
+    restartTimers.delete(job.id);
     log(`job ${job.id.slice(0, 8)} ${job.action} ${job.packageId} on ${job.agentId.slice(0, 8)}: ${job.status}${error ? ` (${error.split("\n")[0]})` : ""}`);
+  }
+
+  function jobLine(job: JobRecord, line: string): void {
+    if (job.log.length < MAX_JOB_LOG_LINES) job.log.push(line);
+    sendLog(job.id, line);
+  }
+
+  // Why `agent` cannot be sent an update to agent `version`, or null.
+  function updateRefusal(agent: AgentRecord, version: string): string | null {
+    if (!agentBuild) return "zeploy-agent.exe is no longer next to the admin app";
+    if (agentBuild.version !== version) return `the admin app now has agent ${agentBuild.version}; update again`;
+    if (!agent.features?.includes(P.FEATURE_SELF_UPDATE)) {
+      return `agent ${agent.agentVersion} cannot update itself; run the installer on this PC once`;
+    }
+    return null;
   }
 
   // Hands the agent its oldest queued job, if it is connected and idle.
@@ -183,7 +228,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         return pump(agentId);
       }
       const token = P.randomToken();
-      downloads.set(job.id, { token, file: join(packagesDir(store), pkg.file) });
+      downloads.set(job.id, { token, file: join(packagesDir(store), pkg.file), type: "application/zip" });
       spec = {
         id: job.id,
         action: "install",
@@ -192,6 +237,30 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         sha256: pkg.sha256,
         downloadPath: `/download/${job.id}?t=${token}`,
         options: job.options,
+      };
+    } else if (job.action === "updateAgent") {
+      const agent = store.data.agents[agentId]!;
+      if (agent.agentVersion === job.version) {
+        // Updated some other way while the job waited, such as by the installer.
+        jobLine(job, `the PC already runs agent ${job.version}`);
+        finishJob(job, true);
+        changed();
+        return pump(agentId);
+      }
+      const refusal = updateRefusal(agent, job.version!);
+      if (refusal || !agentBuild) {
+        finishJob(job, false, refusal ?? undefined);
+        changed();
+        return pump(agentId);
+      }
+      const token = P.randomToken();
+      downloads.set(job.id, { token, file: agentBuild.exe, type: "application/vnd.microsoft.portable-executable" });
+      spec = {
+        id: job.id,
+        action: "updateAgent",
+        version: agentBuild.version,
+        sha256: agentBuild.sha256,
+        downloadPath: `/download/${job.id}?t=${token}`,
       };
     } else {
       spec = { id: job.id, action: "uninstall", packageId: job.packageId, options: job.options };
@@ -216,14 +285,43 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       hostname: info.hostname,
       user: info.user,
       agentVersion: info.agentVersion,
+      features: info.features,
       address,
       firstSeen: prev?.firstSeen ?? now,
       lastSeen: now,
       state: prev?.state ?? null,
     };
-    log(`agent ${info.hostname} (${info.user}) connected from ${address}`);
+    log(`agent ${info.hostname} (${info.user}) ${info.agentVersion} connected from ${address}`);
+    // The job the previous connection was on: an agent update, which this
+    // connection finishes, or a job nobody will report on any more.
+    const pending = store.data.jobs.find((j) => j.agentId === conn.agentId && (j.status === "sent" || j.status === "running"));
+    if (pending) settleOnReconnect(pending, info.agentVersion);
     changed();
     pump(conn.agentId);
+  }
+
+  function settleOnReconnect(job: JobRecord, agentVersion: string): void {
+    if (job.action !== "updateAgent" || job.status !== "running") {
+      finishJob(job, false, "agent reconnected during the job");
+    } else if (agentVersion === job.version) {
+      jobLine(job, `agent ${agentVersion} connected`);
+      finishJob(job, true);
+    } else {
+      finishJob(job, false, `the PC came back with agent ${agentVersion}, not ${job.version}; its agent.log has the reason`);
+    }
+  }
+
+  // The old agent's connection can drop before the new agent connects; the
+  // update has failed only if the new one does not connect in time.
+  function awaitRestart(job: JobRecord): void {
+    const timer = setTimeout(() => {
+      restartTimers.delete(job.id);
+      if (job.status !== "running") return;
+      finishJob(job, false, `the PC did not reconnect within ${RESTART_TIMEOUT_MS / 60_000} minutes of the agent update`);
+      changed();
+    }, RESTART_TIMEOUT_MS);
+    timer.unref();
+    restartTimers.set(job.id, timer);
   }
 
   function onAgentMessage(conn: Conn, msg: P.AgentMessage): void {
@@ -241,8 +339,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         job!.startedAt = new Date().toISOString();
         break;
       case "jobLog":
-        if (job!.log.length < MAX_JOB_LOG_LINES) job!.log.push(msg.line);
-        sendLog(job!.id, msg.line);
+        jobLine(job!, msg.line);
         break;
       case "jobDone":
         finishJob(job!, msg.ok, msg.error);
@@ -258,7 +355,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     if (conns.get(conn.agentId) !== conn) return;
     conns.delete(conn.agentId);
     const job = conn.busy ? store.data.jobs.find((j) => j.id === conn.busy) : undefined;
-    if (job) finishJob(job, false, "agent disconnected during the job");
+    if (job?.action === "updateAgent" && job.status === "running") awaitRestart(job);
+    else if (job) finishJob(job, false, "agent disconnected during the job");
     log(`agent ${store.data.agents[conn.agentId]?.hostname ?? conn.agentId} disconnected`);
     changed();
   }
@@ -351,7 +449,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     const token = url.searchParams.get("t") ?? "";
     if (!entry || !P.safeEqual(token, entry.token)) throw new HttpError(404, "no such download");
     const info = await stat(entry.file);
-    res.writeHead(200, { "content-type": "application/zip", "content-length": info.size });
+    res.writeHead(200, { "content-type": entry.type, "content-length": info.size });
     await pipeline(createReadStream(entry.file), res);
   }
 
@@ -429,6 +527,50 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     return created;
   }
 
+  // Queues an update to this admin's zeploy-agent.exe for each PC. Like any
+  // job, it waits for a PC that is offline.
+  async function createUpdateJobs(agentIds: string[]): Promise<JobRecord[]> {
+    const build = await refreshAgentBuild();
+    if (!build) {
+      throw new HttpError(409, "zeploy-agent.exe or its zeploy-agent.json is missing; run npm run build, then npm run admin");
+    }
+    const agents = agentIds.map((id) => {
+      const agent = store.data.agents[id];
+      if (!agent) throw new HttpError(400, `unknown agent: ${id}`);
+      return agent;
+    });
+    for (const agent of agents) {
+      const name = agent.label ?? agent.hostname;
+      if (compareSemver(agent.agentVersion, build.version) >= 0) {
+        throw new HttpError(409, `${name} already runs agent ${agent.agentVersion}`);
+      }
+      if (!agent.features?.includes(P.FEATURE_SELF_UPDATE)) {
+        throw new HttpError(409, `${name} runs agent ${agent.agentVersion}, which cannot update itself; run the installer on that PC once`);
+      }
+      if (store.data.jobs.some((j) => j.agentId === agent.id && j.action === "updateAgent" && isActive(j))) {
+        throw new HttpError(409, `an agent update for ${name} is already on its way`);
+      }
+    }
+    const created = agents.map((agent) => {
+      const job: JobRecord = {
+        id: randomUUID(),
+        agentId: agent.id,
+        action: "updateAgent",
+        packageId: AGENT_PACKAGE_ID,
+        version: build.version,
+        options: P.jobOptionsSchema.parse({}),
+        status: "queued",
+        createdAt: new Date().toISOString(),
+        log: [],
+      };
+      store.data.jobs.push(job);
+      return job;
+    });
+    changed();
+    for (const agent of agents) pump(agent.id);
+    return created;
+  }
+
   async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     const route = `${req.method} ${url.pathname}`;
     const q = (name: string) => url.searchParams.get(name) ?? "";
@@ -479,6 +621,10 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         });
         log(`saved agent installer for ${body.server} to ${body.folder}`);
         return json(res, 200, saved);
+      }
+      case "POST /api/agents/update": {
+        const { agentIds } = z.object({ agentIds: z.array(z.string()).min(1) }).parse(await readJson(req));
+        return json(res, 200, await createUpdateJobs(agentIds));
       }
       case "POST /api/agents/refresh":
         for (const conn of conns.values()) conn.ws.send(conn.channel.seal({ type: "refresh" } satisfies P.ServerMessage));
@@ -553,6 +699,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   if (address && typeof address === "object") port = address.port;
   log(`zeploy admin server on port ${port} (LAN: ${lanAddresses().join(", ") || "no network"})`);
 
+  // Hashing the agent exe takes a moment; the UI shows the update when done.
+  const agentBuildLoaded = refreshAgentBuild().catch((err: Error) => log(`could not read the agent exe: ${err.message}`));
+
   return {
     port,
     adminToken,
@@ -568,6 +717,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         http.close(() => r());
         http.closeAllConnections();
       });
+      await agentBuildLoaded;
+      for (const timer of restartTimers.values()) clearTimeout(timer);
+      if (stateTimer) clearTimeout(stateTimer);
       await store.flush();
     },
   };

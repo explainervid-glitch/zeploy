@@ -26,6 +26,8 @@ export interface AgentRecord {
   hostname: string;
   user: string;
   agentVersion: string;
+  // FEATURE_* values from the protocol; missing for agents before 0.3.0.
+  features?: string[];
   address: string;
   firstSeen: string;
   lastSeen: string;
@@ -34,10 +36,13 @@ export interface AgentRecord {
 
 export type JobStatus = "queued" | "sent" | "running" | "done" | "failed";
 
+// packageId of an updateAgent job, whose version is the agent version.
+export const AGENT_PACKAGE_ID = "zeploy-agent";
+
 export interface JobRecord {
   id: string;
   agentId: string;
-  action: "install" | "uninstall";
+  action: "install" | "uninstall" | "updateAgent";
   packageId: string;
   version?: string;
   options: JobOptions;

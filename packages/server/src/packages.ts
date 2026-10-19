@@ -253,6 +253,7 @@ export async function importPackage(
       const existing = store.data.packages.find((p) => p.id === manifest.id && p.version === manifest.version)!;
       if (source) existing.source = source;
       existing.keys ??= staged.keys;
+      existing.apps ??= apps;
       store.save();
       return { record: existing, apps };
     }
@@ -271,6 +272,7 @@ export async function importPackage(
       components: manifest.components.map((c) => ({ type: c.type, source: c.source })),
       keys: staged.keys,
       source,
+      apps,
     };
     store.data.packages.push(record);
     store.save();
@@ -280,17 +282,19 @@ export async function importPackage(
   }
 }
 
-// Packages added before zeploy recorded plugin identities get them from
-// their stored zip, so PCs that already have such a plugin show it.
+// Packages added before zeploy recorded plugin identities and apps get them
+// from their stored zip, so PCs that already have such a plugin show it and
+// the package sits under its app.
 export async function backfillKeys(store: Store): Promise<boolean> {
   let changed = false;
-  for (const record of store.data.packages.filter((p) => !p.keys)) {
+  for (const record of store.data.packages.filter((p) => !p.keys || !p.apps)) {
     const pkg = await openPackage(join(packagesDir(store), record.file), { stagingRoot: join(store.dir, "staging") }).catch(
       () => null,
     );
     if (!pkg) continue;
     try {
-      record.keys = await packageKeys(pkg.root, pkg.manifest);
+      record.keys ??= await packageKeys(pkg.root, pkg.manifest);
+      record.apps ??= await appsOf(pkg.root, pkg.manifest);
       changed = true;
     } finally {
       await pkg.close();

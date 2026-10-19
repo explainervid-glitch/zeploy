@@ -211,6 +211,23 @@ kbd {
 .grid .corner { width: 220px; text-align: left; padding: 0 16px; font-weight: 400; color: var(--muted); }
 .grid .corner::before { content: "PC \\ PACKAGE"; font-size: 11px; letter-spacing: 0.06em; }
 
+/* App groups above the package columns. */
+.grid .group {
+  padding: 6px 10px;
+  border-left: 1px solid var(--line2);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid .group::before { content: "─ "; color: var(--line2); }
 .colhead { position: relative; border-top: 3px solid var(--label); font-weight: 400; }
 .colhead-btn {
   width: 100%;

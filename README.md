@@ -440,7 +440,7 @@ plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 ### Read the table
 
-There is one row per PC and one column per package (its latest version).
+There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app.
 
 - ◆ filled: the latest version is installed.
 - ◇ outline: an older version is installed. The cell shows which.

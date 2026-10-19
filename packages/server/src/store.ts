@@ -24,6 +24,9 @@ export interface PackageRecord {
   // The folder or file it was added from, so the admin app can read it again
   // for a newer version. Missing for uploads and older packages.
   source?: string;
+  // Apps it installs into ("aftereffects", "blender"); the admin UI groups
+  // packages by them.
+  apps?: string[];
 }
 
 export interface AgentRecord {

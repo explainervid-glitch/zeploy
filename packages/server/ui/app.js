@@ -97,7 +97,25 @@ function latestPackages() {
     const cur = byId.get(p.id);
     if (!cur || compareSemver(p.version, cur.version) > 0) byId.set(p.id, p);
   }
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  // Grouped by app (see appGroup), then by name.
+  return [...byId.values()].sort((a, b) => appGroup(a).order - appGroup(b).order || appGroup(a).label.localeCompare(appGroup(b).label) || a.name.localeCompare(b.name));
+}
+
+const APP_ORDER = ["aftereffects", "premiere", "animate", "blender"];
+
+// The column group a package sits in: its app, or its apps together for a
+// panel that loads in several ("After Effects + Premiere Pro").
+function appGroup(pkg) {
+  const apps = [...new Set(pkg.apps ?? [])].sort((a, b) => APP_ORDER.indexOf(a) - APP_ORDER.indexOf(b));
+  if (!apps.length) return { key: "", label: "Other", title: "Apps not known", order: 99 };
+  const first = APP_ORDER.indexOf(apps[0]);
+  return {
+    key: apps.join("+"),
+    label: apps.map((a) => APP_SHORT[a] ?? APP_LABELS[a] ?? a).join(" + "),
+    title: apps.map((a) => APP_LABELS[a] ?? a).join(" + "),
+    // Single-app groups first in app order, then combinations after their first app.
+    order: (first < 0 ? 50 : first) * 2 + (apps.length > 1 ? 1 : 0),
+  };
 }
 
 function relTime(iso) {
@@ -381,6 +399,17 @@ function rowHtml(agent, pkgs) {
   );
 }
 
+// One header cell per app group, spanning its packages' columns.
+function groupHead(pkgs) {
+  const groups = [];
+  for (const p of pkgs) {
+    const g = appGroup(p);
+    if (groups.at(-1)?.key === g.key) groups.at(-1).n++;
+    else groups.push({ ...g, n: 1 });
+  }
+  return groups.map((g) => `<th scope="colgroup" colspan="${g.n}" class="group" title="${esc(g.title)}">${esc(g.label)}</th>`).join("");
+}
+
 function renderMatrix() {
   const el = $("matrix");
   if (state.agents.length === 0) {
@@ -410,7 +439,8 @@ function renderMatrix() {
     : `<tr><td class="none-match" colspan="${pkgs.length + 1}">No PCs match.</td></tr>`;
   el.innerHTML =
     `<div class="matrix"><table class="grid" style="--pkgs:${pkgs.length}">` +
-    `<thead><tr><th class="corner" scope="col"><span class="vh">PC</span></th>${head}</tr></thead>` +
+    `<thead><tr class="groups"><th class="corner" scope="col" rowspan="2"><span class="vh">PC</span></th>${groupHead(pkgs)}</tr>` +
+    `<tr>${head}</tr></thead>` +
     `<tbody>${body}</tbody></table></div>` +
     (pkgs.length
       ? ""

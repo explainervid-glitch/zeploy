@@ -147,6 +147,11 @@ kbd {
   padding: 0 20px;
   height: 46px;
   border-bottom: 1px solid var(--line2);
+  /* Stays at the top while the page scrolls. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
 }
 /* Desktop app: the top bar is the title bar. It drags the window, its
    controls stay clickable, and its right end leaves room for the window
@@ -192,7 +197,7 @@ kbd {
   min-width: 0;
   max-width: 60vw;
   position: sticky;
-  top: 0;
+  top: 47px;
   height: calc(100vh - 47px - var(--bar));
   overflow-y: auto;
   border-left: 1px solid var(--line2);

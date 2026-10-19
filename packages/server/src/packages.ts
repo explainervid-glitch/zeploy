@@ -6,6 +6,7 @@ import {
   buildInferredPackage,
   hasManifest,
   inferPlugin,
+  retargetScript,
   manifestSchema,
   openPackage,
   packageKeys,
@@ -13,6 +14,7 @@ import {
   readCepManifest,
   type AppId,
   type InferredPlugin,
+  type ScriptApp,
   type Manifest,
 } from "../../core/src/index.ts";
 import type { PackageRecord, Store } from "./store.ts";
@@ -49,6 +51,8 @@ export interface PackagePreview {
     missing: "version"[];
     // zxp only, editable like name and version.
     extensionName?: string;
+    // .jsx/.jsxbin only: the app it goes into, editable too.
+    scriptApp?: ScriptApp;
     // The package this is another version of, by plugin identity.
     updates: { id: string; name: string; version: string } | null;
   };
@@ -60,6 +64,8 @@ export interface Overrides {
   name?: string;
   version?: string;
   extensionName?: string;
+  // .jsx/.jsxbin only: install into this app instead of the one read from the script.
+  app?: ScriptApp;
 }
 
 interface Detection {
@@ -85,9 +91,18 @@ interface Staged {
 // already in the repository keeps that package's id and name, so it lands in
 // the same column.
 async function detect(store: Store, sourcePath: string, overrides: Overrides): Promise<Detection> {
-  const plugin = await inferPlugin(sourcePath).catch((err: Error) => {
+  const read = await inferPlugin(sourcePath).catch((err: Error) => {
     throw new HttpError(400, err.message);
   });
+  let plugin = overrides.app ? retargetScript(read, overrides.app) : read;
+  // A script already in the repository for the other app (the admin
+  // corrected the guess when adding it) stays with that app.
+  const app = scriptAppOf(plugin);
+  if (app && !overrides.app) {
+    const other = retargetScript(plugin, app === "illustrator" ? "aftereffects" : "illustrator");
+    const has = (key: string) => store.data.packages.some((p) => p.keys?.includes(key));
+    if (!has(plugin.key) && has(other.key)) plugin = other;
+  }
   const sameName = (p: PackageRecord) => p.name.toLowerCase() === plugin.name.toLowerCase();
   const known =
     store.data.packages.find((p) => p.keys?.includes(plugin.key)) ??
@@ -116,11 +131,17 @@ function manifestOf(d: Detection): Manifest {
   return result.data;
 }
 
+function scriptAppOf(plugin: InferredPlugin): ScriptApp | undefined {
+  const { type } = plugin.component;
+  return type === "ae-script" ? "aftereffects" : type === "ai-script" ? "illustrator" : undefined;
+}
+
 function detectedOf(d: Detection): NonNullable<PackagePreview["detected"]> {
   return {
     from: d.plugin.from,
     missing: d.version ? [] : ["version"],
     extensionName: d.extensionName,
+    scriptApp: scriptAppOf(d.plugin),
     updates: d.updates ? { id: d.updates.id, name: d.updates.name, version: d.updates.version } : null,
   };
 }
@@ -130,6 +151,7 @@ async function appsOf(root: string, manifest: Manifest): Promise<AppId[]> {
   for (const c of manifest.components) {
     if (c.type === "cep") for (const host of (await readCepManifest(join(root, c.source))).hosts) apps.add(host);
     else if (c.type === "ae-script") apps.add("aftereffects");
+    else if (c.type === "ai-script") apps.add("illustrator");
     else if (c.type === "jsfl") apps.add("animate");
     else if (c.type === "blender") apps.add("blender");
   }

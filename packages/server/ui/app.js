@@ -6,6 +6,8 @@
 const token = document.querySelector('meta[name="admin-token"]').content;
 // Present only inside the Electron app (see packages/admin/preload.cjs).
 const desktop = window.zeployDesktop ?? null;
+// In the desktop app the top bar is also the window's title bar (style.css).
+if (desktop) document.documentElement.classList.add("desktop");
 
 // After Effects' layer label colors, one per package.
 const LABELS = ["#E4D84C", "#A9CBC7", "#677DE0", "#E8920D", "#E5BCC9", "#4AA44C", "#A9A9CA", "#3DA2A5", "#F46DD6", "#E7C19E", "#B3C7B3", "#A89677"];

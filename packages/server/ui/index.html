@@ -89,7 +89,7 @@
           <button type="button" id="pick-file" class="btn">File</button>
           <input type="file" id="file-input" accept=".zip,.zxp,.ccx,.jsx,.jsxbin,.jsfl,.py" hidden>
         </div>
-        <p class="muted small">A CEP panel folder, .zxp, .ccx, Blender extension or add-on, .jsx or .jsfl. zeploy reads its name and version; zeploy.json is only needed to combine several parts.</p>
+        <p class="muted small">A CEP panel folder, .zxp, .ccx, Blender extension or add-on, .jsx (After Effects or Illustrator) or .jsfl. zeploy reads its name and version; zeploy.json is only needed to combine several parts.</p>
         <div id="add-preview" class="preview" hidden>
           <div class="preview-main">
             <span><span id="pv-name" class="pv-name"></span> <span id="pv-version" class="code muted small"></span></span>
@@ -108,6 +108,11 @@
               <input id="dt-id" class="input code" type="text" autocomplete="off" spellcheck="false" data-override="id"></label>
             <label id="dt-ext-row" class="field" hidden><span class="label" title="As UnifiedPluginInstallerAgent /list all shows it; zeploy needs it to remove the extension">Name in Adobe's extension list</span>
               <input id="dt-ext" class="input" type="text" autocomplete="off" data-override="extensionName"></label>
+            <label id="dt-app-row" class="field" hidden><span class="label">Installs into</span>
+              <select id="dt-app" class="select" data-override="app">
+                <option value="aftereffects">After Effects (Scripts or ScriptUI Panels)</option>
+                <option value="illustrator">Illustrator (File &gt; Scripts)</option>
+              </select></label>
           </div>
           <p id="dt-updates" class="muted small" hidden></p>
         </fieldset>

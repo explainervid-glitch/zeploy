@@ -36,6 +36,14 @@ function startFolder(path: unknown): string | undefined {
   return existsSync(path) ? path : undefined;
 }
 
+// The window buttons' colours: the UI's background and text (style.css),
+// and the height of its top bar.
+function theme(): { color: string; symbolColor: string; height: number } {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: "#0D0F10", symbolColor: "#D8DCD6", height: 46 }
+    : { color: "#F4F2EC", symbolColor: "#1C1E1F", height: 46 };
+}
+
 async function boot(): Promise<void> {
   const port = Number(process.env["ZEPLOY_PORT"] ?? DEFAULT_PORT);
   try {
@@ -88,7 +96,12 @@ async function boot(): Promise<void> {
     minHeight: 560,
     title: "zeploy",
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0D0F10" : "#F4F2EC",
+    backgroundColor: theme().color,
+    // No Windows title bar: the UI's top bar takes its place (and is where
+    // the window is dragged), while Windows still draws the minimise,
+    // maximise and close buttons over its right end, in the UI's colours.
+    titleBarStyle: "hidden",
+    titleBarOverlay: theme(),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -105,6 +118,12 @@ async function boot(): Promise<void> {
     if (!url.startsWith(adminUrl)) event.preventDefault();
   });
   win.on("closed", () => (win = null));
+  // The UI follows the Windows light/dark setting; the buttons follow it too.
+  nativeTheme.on("updated", () => {
+    if (!win) return;
+    win.setTitleBarOverlay(theme());
+    win.setBackgroundColor(theme().color);
+  });
   await win.loadURL(adminUrl);
 }
 

@@ -69,6 +69,7 @@ test("detectEnvironment finds apps in a fake Program Files tree", async () => {
   await write(join(pf, "Adobe", "Adobe After Effects 2025", "Support Files", "AfterFX.exe"));
   await write(join(pf, "Adobe", "Adobe Premiere Pro 2025", "Adobe Premiere Pro.exe"));
   await write(join(pf, "Adobe", "Adobe Photoshop 2025", "Photoshop.exe"));
+  await write(join(pf, "Adobe", "Adobe Illustrator 2025", "Support Files", "Contents", "Windows", "Illustrator.exe"));
   await write(join(pf, "Blender Foundation", "Blender 4.2", "blender.exe"));
   await write(join(pf, "Blender Foundation", "Blender 4.2", "4.2", "scripts", ".keep"));
   await write(join(pf, "Blender Foundation", "Broken", "readme.txt"));
@@ -88,7 +89,7 @@ test("detectEnvironment finds apps in a fake Program Files tree", async () => {
   });
   assert.deepEqual(
     env.adobe.map((a) => `${a.app} ${a.version}`),
-    ["aftereffects 2025", "premiere 2025"],
+    ["aftereffects 2025", "illustrator 2025", "premiere 2025"],
   );
   assert.deepEqual(env.blender.map((b) => b.version), ["4.2"]);
   assert.deepEqual(env.animateConfigs.map((c) => `${c.version} ${c.lang}`), ["2024 en_US"]);

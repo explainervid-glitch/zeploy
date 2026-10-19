@@ -2,7 +2,7 @@
 
 import type { Action, HandlerResult, Plan, PlanContext, Receipt, ReceiptItem } from "./actions.ts";
 import { APP_PROCESSES, type AppId, type Environment } from "./env.ts";
-import { planAeScript, planJsfl } from "./handlers/adobe-scripts.ts";
+import { planAeScript, planAiScript, planJsfl } from "./handlers/adobe-scripts.ts";
 import { blenderRemove, planBlender } from "./handlers/blender.ts";
 import { planCep } from "./handlers/cep.ts";
 import { planZxp, zxpRemoveActions } from "./handlers/zxp.ts";
@@ -14,6 +14,8 @@ function planComponent(c: Component, ctx: PlanContext): Promise<HandlerResult> {
       return planCep(c, ctx);
     case "ae-script":
       return planAeScript(c, ctx);
+    case "ai-script":
+      return planAiScript(c, ctx);
     case "jsfl":
       return planJsfl(c, ctx);
     case "zxp":

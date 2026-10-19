@@ -48,7 +48,7 @@ async function scanCep(dir: string, where: string, out: FoundPlugin[]): Promise<
   }
 }
 
-async function scanScripts(dir: string, type: "ae-script" | "jsfl", where: string, out: FoundPlugin[]): Promise<void> {
+async function scanScripts(dir: string, type: "ae-script" | "ai-script" | "jsfl", where: string, out: FoundPlugin[]): Promise<void> {
   const wanted = type === "jsfl" ? /^\.jsfl$/i : /^\.(jsx|jsxbin)$/i;
   for (const e of await entries(dir)) {
     if (!e.isFile() || !wanted.test(extname(e.name))) continue;
@@ -94,6 +94,12 @@ export async function scanInstalled(env: Environment): Promise<FoundPlugin[]> {
     await scanScripts(scripts, "ae-script", `AE ${ae.version} Scripts`, out);
     for (const folder of SCRIPT_FOLDERS) {
       await scanScripts(join(scripts, folder), "ae-script", `AE ${ae.version} ${folder}`, out);
+    }
+  }
+  for (const ai of env.adobe.filter((a) => a.app === "illustrator")) {
+    const presets = join(ai.dir, "Presets");
+    for (const lang of await entries(presets)) {
+      if (lang.isDirectory()) await scanScripts(join(presets, lang.name, "Scripts"), "ai-script", `Illustrator ${ai.version} Scripts`, out);
     }
   }
   for (const cfg of env.animateConfigs) {

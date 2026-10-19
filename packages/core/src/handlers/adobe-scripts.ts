@@ -1,14 +1,15 @@
-// Plain script files: After Effects .jsx/.jsxbin and Animate .jsfl.
+// Plain script files: After Effects and Illustrator .jsx/.jsxbin, and
+// Animate .jsfl.
 //
-// AE scripts go into each AE install under Program Files, so they need
-// administrator rights. Animate commands go into the per-user Configuration
-// folder, which Animate only creates the first time it runs.
+// AE and Illustrator scripts go into each install under Program Files, so
+// they need administrator rights. Animate commands go into the per-user
+// Configuration folder, which Animate only creates the first time it runs.
 
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { emptyResult, PlanError, type Action, type HandlerResult, type PlanContext } from "../actions.ts";
 import { APP_PROCESSES } from "../env.ts";
-import type { AeScriptComponent, JsflComponent } from "../manifest.ts";
+import type { AeScriptComponent, AiScriptComponent, JsflComponent } from "../manifest.ts";
 
 function matchesVersions(version: string, wanted: string[] | undefined): boolean {
   return !wanted?.length || wanted.includes(version);
@@ -40,6 +41,42 @@ export async function planAeScript(c: AeScriptComponent, ctx: PlanContext): Prom
     const dest = join(folder, basename(c.source));
     result.actions.push(await copyAction(source, dest));
     result.items.push({ kind: "path", path: dest });
+  }
+  return result;
+}
+
+// Illustrator lists the scripts in Presets\<language>\Scripts under
+// File > Scripts. An install normally has one language folder ("en_US");
+// the script goes into each one there is.
+async function illustratorScriptDirs(dir: string): Promise<string[]> {
+  const presets = join(dir, "Presets");
+  const entries = await readdir(presets, { withFileTypes: true }).catch(() => []);
+  return entries.filter((e) => e.isDirectory() && /^[a-z]{2}_[A-Z]{2}$/.test(e.name)).map((e) => join(presets, e.name, "Scripts"));
+}
+
+export async function planAiScript(c: AiScriptComponent, ctx: PlanContext): Promise<HandlerResult> {
+  const { env } = ctx;
+  const installs = env.adobe.filter((a) => a.app === "illustrator");
+  const targets = installs.filter((a) => matchesVersions(a.version, c.versions));
+  if (targets.length === 0) {
+    const found = installs.map((a) => a.version).join(", ") || "none";
+    throw new PlanError(`no matching Illustrator install for ${c.source} (installed: ${found})`);
+  }
+  if (!env.isAdmin) {
+    throw new PlanError("Illustrator scripts go under Program Files and need an elevated (administrator) process");
+  }
+
+  const result = emptyResult();
+  result.actions.push({ kind: "ensureNotRunning", app: "illustrator", process: APP_PROCESSES.illustrator });
+  const source = join(ctx.root, c.source);
+  for (const ai of targets) {
+    const dirs = await illustratorScriptDirs(ai.dir);
+    if (dirs.length === 0) throw new PlanError(`no Presets\\<language> folder in ${ai.dir}`);
+    for (const scripts of dirs) {
+      const dest = join(scripts, basename(c.source));
+      result.actions.push(await copyAction(source, dest));
+      result.items.push({ kind: "path", path: dest });
+    }
   }
   return result;
 }

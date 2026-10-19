@@ -17,7 +17,7 @@ export interface WindowsPaths {
   localAppData: string;
 }
 
-export type AdobeAppId = "aftereffects" | "premiere" | "animate";
+export type AdobeAppId = "aftereffects" | "premiere" | "animate" | "illustrator";
 export type AppId = AdobeAppId | "blender";
 
 export interface AdobeInstall {
@@ -59,6 +59,7 @@ export const APP_LABELS: Record<AppId, string> = {
   aftereffects: "After Effects",
   premiere: "Premiere Pro",
   animate: "Animate",
+  illustrator: "Illustrator",
   blender: "Blender",
 };
 
@@ -66,6 +67,7 @@ export const APP_PROCESSES: Record<AppId, string> = {
   aftereffects: "AfterFX.exe",
   premiere: "Adobe Premiere Pro.exe",
   animate: "Animate.exe",
+  illustrator: "Illustrator.exe",
   blender: "blender.exe",
 };
 
@@ -75,12 +77,14 @@ export const CEP_HOSTS: Record<string, AdobeAppId> = {
   AEFT: "aftereffects",
   PPRO: "premiere",
   FLPR: "animate",
+  ILST: "illustrator",
 };
 
 const ADOBE_PRODUCTS: { app: AdobeAppId; prefix: string; exe: string[] }[] = [
   { app: "aftereffects", prefix: "Adobe After Effects ", exe: ["Support Files", "AfterFX.exe"] },
   { app: "premiere", prefix: "Adobe Premiere Pro ", exe: ["Adobe Premiere Pro.exe"] },
   { app: "animate", prefix: "Adobe Animate ", exe: ["Animate.exe"] },
+  { app: "illustrator", prefix: "Adobe Illustrator ", exe: ["Support Files", "Contents", "Windows", "Illustrator.exe"] },
 ];
 
 export function defaultPaths(env: NodeJS.ProcessEnv = process.env): WindowsPaths {

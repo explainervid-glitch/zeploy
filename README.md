@@ -1,7 +1,7 @@
 # zeploy
 
-zeploy installs After Effects, Premiere Pro, Animate and Blender plugins on
-the team's PCs over the LAN.
+zeploy installs After Effects, Premiere Pro, Illustrator, Animate and Blender
+plugins on the team's PCs over the LAN.
 
 - The **admin app** runs on one PC (the admin PC). It keeps the plugin
   packages and shows which PC has which version.
@@ -275,7 +275,7 @@ options.
 | `.ccx` (UXP) | `id`, `name`, `version`, `host` from `manifest.json` inside it | `zxp` |
 | Blender extension (`.zip` or folder with `blender_manifest.toml`) | `id`, `name`, `version` | `blender` |
 | Blender legacy add-on (`.zip` or folder with `__init__.py`, or one `.py`) | `name` and `version` from `bl_info`; the id is the folder or file name | `blender` (a folder is zipped) |
-| `.jsx` / `.jsxbin` | the file name; a version only if the script states one (`@version 1.2.0` or `SCRIPT_VERSION = "1.2.0"`) | `ae-script`: `ScriptUI Panels` when it builds its UI in a `Panel`, else `Scripts` |
+| `.jsx` / `.jsxbin` | the file name; a version only if the script states one (`@version 1.2.0` or `SCRIPT_VERSION = "1.2.0"`) | `ai-script` when it targets Illustrator (`#target illustrator`, or Illustrator's `pathItems`, `artboards` and the like without `app.project`); else `ae-script`: `ScriptUI Panels` when it builds its UI in a `Panel`, else `Scripts`. **Installs into** in the Add dialog corrects the guess |
 | `.jsfl` | the same | `jsfl` in `Commands` |
 
 - A folder that holds exactly one of these one level down, such as a release
@@ -323,6 +323,7 @@ components point at, so the package folder can be the plugin's working folder.
 | --- | --- | --- |
 | `cep` | folder with `CSXS/manifest.xml` | `CEP\extensions\<installName>`, for all users when the agent is elevated, else for the user. Also sets `PlayerDebugMode=1` for CSXS 9 to 24, so unsigned panels load |
 | `ae-script` | `.jsx`/`.jsxbin` file or folder | `Support Files\Scripts\<folder>` in every After Effects install. Needs an elevated agent |
+| `ai-script` | `.jsx`/`.jsxbin` file or folder | `Presets\<language>\Scripts` in every Illustrator install, where it shows under File > Scripts. Needs an elevated agent (0.6.0 or later) |
 | `jsfl` | `.jsfl` file or folder | `%LOCALAPPDATA%\Adobe\Animate <version>\<language>\Configuration\<folder>` |
 | `zxp` | signed `.zxp` or `.ccx` | through Adobe's UnifiedPluginInstallerAgent |
 | `blender` | extension `.zip`, legacy add-on `.zip`, or single-file `.py` | every compatible Blender version, installed and enabled by Blender itself. Each version installs on its own: if one fails, the others stay installed and the install counts as partly done |
@@ -334,6 +335,8 @@ Optional fields:
   `playerDebugMode` defaults to `true`.
 - `ae-script`: `folder` is `ScriptUI Panels` (default), `Scripts`, `Startup`
   or `Shutdown`. `versions` limits it to some AE installs, such as `["2024"]`.
+- `ai-script`: `versions` limits it to some Illustrator installs, such as
+  `["2025"]`.
 - `jsfl`: `folder` is `Commands` (default), `Tools`, `WindowSWF` or
   `Javascript`. `versions` works as for `ae-script`.
 - `zxp`: `extensionName` is required; zeploy needs it to remove the extension.
@@ -440,7 +443,7 @@ plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 ### Read the table
 
-There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app.
+There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app.
 
 - ◆ filled: the latest version is installed.
 - ◇ outline: an older version is installed. The cell shows which.
@@ -463,7 +466,8 @@ before you add a package.
 
 "Found" needs agent 0.4.0 or later. The agent looks in the CEP extensions
 folders (all users and this user), the After Effects `Scripts`, `ScriptUI
-Panels`, `Startup` and `Shutdown` folders, Animate's `Commands`, `Tools` and
+Panels`, `Startup` and `Shutdown` folders, Illustrator's
+`Presets\<language>\Scripts` (agent 0.6.0), Animate's `Commands`, `Tools` and
 `WindowSWF`, and each Blender version's add-ons and extensions. It matches
 what it finds to packages by plugin id (bundle id, extension id, module or
 file name), so a CEP panel is found whatever its folder is called. A `.zxp`

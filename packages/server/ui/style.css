@@ -148,6 +148,23 @@ kbd {
   height: 46px;
   border-bottom: 1px solid var(--line2);
 }
+/* Desktop app: the top bar is the title bar. It drags the window, its
+   controls stay clickable, and its right end leaves room for the window
+   buttons Windows draws there (titlebar-area-* when Windows reports them). */
+.desktop .topbar {
+  -webkit-app-region: drag;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 12px);
+}
+.desktop .topbar button, .desktop .topbar a, .desktop .topbar .online { -webkit-app-region: no-drag; }
+/* A thin frame in the theme colour around the whole window. */
+.desktop body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  border: 1px solid var(--line2);
+  pointer-events: none;
+  z-index: 50;
+}
 .brand { display: flex; align-items: center; gap: 8px; margin: 0 8px 0 0; font-size: 15px; font-weight: 700; }
 .brand .prompt { color: var(--primary); }
 .brand::after { content: ""; width: 8px; height: 15px; background: var(--primary); animation: blink 1.1s steps(1) infinite; }
@@ -544,7 +561,8 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .detected { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .detected legend { padding: 0; margin-bottom: 8px; }
 .detected-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px 12px; }
-.detected-grid .field:nth-child(3), .detected-grid .field:nth-child(4) { grid-column: 1 / -1; }
+.detected-grid .field:nth-child(n + 3) { grid-column: 1 / -1; }
+.detected-grid .select { height: 32px; }
 .detected-grid .input { flex: none; }
 .input.needs { border-color: var(--warn); }
 @media (max-width: 480px) { .detected-grid { grid-template-columns: minmax(0, 1fr); } }

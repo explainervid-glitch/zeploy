@@ -40,6 +40,9 @@ export interface InferredPlugin {
   apps: AppId[];
   // How the source gets into the package.
   input: { path: string; as: "copy" | "zip-folder" } | { path: string; as: "extract"; prefix: string };
+  // .jsx/.jsxbin only: the After Effects folder it would go into, kept so it
+  // can be pointed back at After Effects after being pointed at Illustrator.
+  aeFolder?: "ScriptUI Panels" | "Scripts";
 }
 
 export class InferError extends Error {
@@ -282,18 +285,44 @@ async function fromScript(file: string): Promise<InferredPlugin> {
       input: { path: file, as: "copy" },
     };
   }
-  // A ScriptUI panel builds its UI in the Panel it is docked into.
-  const folder = ext === ".jsxbin" || /instanceof\s+Panel\b/.test(body) ? "ScriptUI Panels" : "Scripts";
-  return {
+  const plugin: InferredPlugin = {
     from,
-    key: `ae-script:${source.toLowerCase()}`,
+    key: "",
     id: slugId(fileStem(file)),
     name: fileStem(file),
     version,
-    component: { type: "ae-script", source, folder },
-    apps: ["aftereffects"],
+    component: { type: "ai-script", source },
+    apps: [],
     input: { path: file, as: "copy" },
+    // A ScriptUI panel builds its UI in the Panel it is docked into.
+    aeFolder: ext === ".jsxbin" || /instanceof\s+Panel\b/.test(body) ? "ScriptUI Panels" : "Scripts",
   };
+  return retargetScript(plugin, isIllustratorScript(body) ? "illustrator" : "aftereffects");
+}
+
+// "#target illustrator" (or "//@target illustrator") near the top says so;
+// so does Illustrator's document model in a script that never touches an
+// After Effects project. A .jsxbin is compiled, so it reads as neither.
+export function isIllustratorScript(source: string): boolean {
+  const head = source.slice(0, 8192);
+  const target = /^\s*(?:\/\/)?\s*[#@]target\s+["']?([a-z]+)/im.exec(head)?.[1]?.toLowerCase();
+  if (target) return target === "illustrator";
+  return !/\bapp\.project\b/.test(source) && /\b(pathItems|artboards|textFrames|symbolItems|graphicStyles|compoundPathItems)\b/.test(source);
+}
+
+export type ScriptApp = "aftereffects" | "illustrator";
+
+// Points a .jsx or .jsxbin at After Effects or Illustrator, as read from the
+// script or as the admin chose.
+export function retargetScript(plugin: InferredPlugin, app: ScriptApp): InferredPlugin {
+  const c = plugin.component;
+  if (c.type !== "ae-script" && c.type !== "ai-script") return plugin;
+  const { source } = c;
+  if (app === "illustrator") {
+    return { ...plugin, key: `ai-script:${source.toLowerCase()}`, component: { type: "ai-script", source }, apps: ["illustrator"] };
+  }
+  const folder = plugin.aeFolder ?? "ScriptUI Panels";
+  return { ...plugin, key: `ae-script:${source.toLowerCase()}`, component: { type: "ae-script", source, folder }, apps: ["aftereffects"] };
 }
 
 // A zip without zeploy.json: a Blender extension or add-on, or a zipped CEP panel.

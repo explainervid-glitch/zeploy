@@ -222,3 +222,32 @@ test("upgrade removes what the previous version installed and the new one does n
     [join(env.cep.user, "old.panel")],
   );
 });
+
+test("ai-script: goes into Presets\<language>\Scripts of every Illustrator install and needs elevation", async () => {
+  const root = await makeTmp();
+  const pkgRoot = join(root, "pkg");
+  await mkdir(pkgRoot, { recursive: true });
+  await writeFile(join(pkgRoot, "Align Tool.jsx"), "#target illustrator\n");
+  const ai = (version: string) => ({
+    app: "illustrator" as const,
+    version,
+    dir: join(root, `Adobe Illustrator ${version}`),
+    exe: join(root, `Adobe Illustrator ${version}`, "Support Files", "Contents", "Windows", "Illustrator.exe"),
+  });
+  const env = { ...fakeEnv(root), adobe: [ai("2024"), ai("2025")] };
+  await mkdir(join(env.adobe[0]!.dir, "Presets", "en_US", "Scripts"), { recursive: true });
+  await mkdir(join(env.adobe[1]!.dir, "Presets", "ja_JP"), { recursive: true });
+  const script = { type: "ai-script", source: "Align Tool.jsx" } as const;
+
+  await assert.rejects(planInstall(ctx(pkgRoot, env, [script])), /need an elevated/);
+  const plan = await planInstall(ctx(pkgRoot, { ...env, isAdmin: true }, [script]));
+  assert.deepEqual(plan.apps, ["illustrator"]);
+  assert.deepEqual(plan.items, [
+    { kind: "path", path: join(env.adobe[0]!.dir, "Presets", "en_US", "Scripts", "Align Tool.jsx") },
+    { kind: "path", path: join(env.adobe[1]!.dir, "Presets", "ja_JP", "Scripts", "Align Tool.jsx") },
+  ]);
+
+  const only2025 = await planInstall(ctx(pkgRoot, { ...env, isAdmin: true }, [{ ...script, versions: ["2025"] }]));
+  assert.equal(only2025.items.length, 1);
+  await assert.rejects(planInstall(ctx(pkgRoot, { ...env, adobe: [] }, [script])), /no matching Illustrator install/);
+});

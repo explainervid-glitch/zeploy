@@ -397,6 +397,28 @@ test("a PC reports a plugin it has without zeploy, and packages remember their s
   assert.deepEqual(added.body.keys, ["cep:com.handmade.panel"]);
 });
 
+test("a .jsx is offered as After Effects or Illustrator script, and the choice sticks", async () => {
+  const file = join(root, "scripts", "Swatches.jsx");
+  await write(file, "// @version 1.0.0\nvar s = app.activeDocument.swatches; var a = app.activeDocument.artboards;");
+  const guessed = await api("POST", "/api/packages/inspect", { path: file });
+  assert.equal(guessed.status, 200, JSON.stringify(guessed.body));
+  assert.equal(guessed.body.detected.scriptApp, "illustrator");
+  assert.deepEqual(guessed.body.apps, ["illustrator"]);
+
+  const asAe = await api("POST", "/api/packages/inspect", { path: file, overrides: { app: "aftereffects" } });
+  assert.equal(asAe.body.detected.scriptApp, "aftereffects");
+  assert.deepEqual(asAe.body.components, [{ type: "ae-script", source: "Swatches.jsx" }]);
+
+  const added = await api("POST", "/api/packages/import", { path: file, overrides: { app: "aftereffects" } });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.deepEqual(added.body.keys, ["ae-script:swatches.jsx"]);
+  // Read again without the choice: it stays the After Effects package.
+  await write(file, "// @version 1.1.0\nvar s = app.activeDocument.swatches; var a = app.activeDocument.artboards;");
+  const next = await api("POST", "/api/packages/inspect", { path: file });
+  assert.equal(next.body.detected.scriptApp, "aftereffects");
+  assert.equal(next.body.id, added.body.id);
+});
+
 test("a download link only works with its job's token", async () => {
   const res = await fetch(`http://127.0.0.1:${server.port}/download/nope?t=x`);
   assert.equal(res.status, 404);

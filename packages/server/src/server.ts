@@ -121,6 +121,7 @@ const packageRequestSchema = z.object({
       name: z.string().max(200),
       version: z.string().max(64),
       extensionName: z.string().max(200),
+      app: z.enum(["aftereffects", "illustrator"]),
     })
     .partial()
     .optional(),

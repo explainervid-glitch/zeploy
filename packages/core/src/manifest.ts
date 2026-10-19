@@ -57,6 +57,14 @@ const aeScriptComponent = z.object({
   versions: adobeVersions,
 });
 
+const aiScriptComponent = z.object({
+  type: z.literal("ai-script"),
+  // A .jsx/.jsxbin file or a folder, copied into Presets\<language>\Scripts
+  // of every Illustrator install, where it shows under File > Scripts.
+  source: relPath,
+  versions: adobeVersions,
+});
+
 const jsflComponent = z.object({
   type: z.literal("jsfl"),
   // A .jsfl file or a folder, copied into Animate's per-user Configuration.
@@ -102,6 +110,7 @@ const blenderComponent = z.object({
 export const componentSchema = z.discriminatedUnion("type", [
   cepComponent,
   aeScriptComponent,
+  aiScriptComponent,
   jsflComponent,
   zxpComponent,
   blenderComponent,
@@ -122,6 +131,7 @@ export type Manifest = z.infer<typeof manifestSchema>;
 export type Component = z.infer<typeof componentSchema>;
 export type CepComponent = z.infer<typeof cepComponent>;
 export type AeScriptComponent = z.infer<typeof aeScriptComponent>;
+export type AiScriptComponent = z.infer<typeof aiScriptComponent>;
 export type JsflComponent = z.infer<typeof jsflComponent>;
 export type ZxpComponent = z.infer<typeof zxpComponent>;
 export type BlenderComponent = z.infer<typeof blenderComponent>;

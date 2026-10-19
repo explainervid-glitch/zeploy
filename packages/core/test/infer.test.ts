@@ -15,6 +15,7 @@ import {
   packPackage,
   parseBlInfo,
   parseManifest,
+  retargetScript,
   scriptVersion,
   type InferredPlugin,
 } from "../src/index.ts";
@@ -190,4 +191,25 @@ test("something that is no plugin says what zeploy expects", async () => {
   await write(join(root, "notes.txt"), "hi");
   await assert.rejects(inferPlugin(join(root, "notes.txt")), /not a plugin zeploy recognises/);
   await assert.rejects(inferPlugin(join(root, "missing")), /not found/);
+});
+
+test("a .jsx targeting Illustrator becomes an Illustrator script, and can be pointed back", async () => {
+  const root = await makeTmp();
+  await write(join(root, "Align.jsx"), "#target illustrator\nvar doc = app.activeDocument;");
+  await write(join(root, "Paths.jsx"), "var items = app.activeDocument.pathItems;");
+  await write(join(root, "Comp.jsx"), "//@target aftereffects\nvar items = app.activeDocument.pathItems;");
+  await write(join(root, "Mixed.jsx"), "app.project.activeItem; var p = pathItems;");
+
+  const align = await inferPlugin(join(root, "Align.jsx"));
+  assert.deepEqual(align.component, { type: "ai-script", source: "Align.jsx" });
+  assert.deepEqual(align.apps, ["illustrator"]);
+  assert.equal(align.key, "ai-script:align.jsx");
+  assert.equal((await inferPlugin(join(root, "Paths.jsx"))).component.type, "ai-script");
+  assert.equal((await inferPlugin(join(root, "Comp.jsx"))).component.type, "ae-script");
+  assert.equal((await inferPlugin(join(root, "Mixed.jsx"))).component.type, "ae-script");
+
+  const back = retargetScript(align, "aftereffects");
+  assert.deepEqual(back.component, { type: "ae-script", source: "Align.jsx", folder: "Scripts" });
+  assert.equal(back.key, "ae-script:align.jsx");
+  assert.deepEqual(retargetScript(back, "illustrator").component, align.component);
 });

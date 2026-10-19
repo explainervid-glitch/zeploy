@@ -304,6 +304,54 @@ test("a failed agent update keeps the old agent connected", async () => {
   assert.equal(record.agentVersion, "8.0.0");
 });
 
+test("a plugin without zeploy.json: details are read, typed over, and a new version joins its package", async () => {
+  // A dropped script: uploaded, then added from where the server put it.
+  const res = await fetch(`http://127.0.0.1:${server.port}/api/packages/upload?name=Layer%20Tools.jsx`, {
+    method: "POST",
+    headers: { "x-zeploy-admin": server.adminToken },
+    body: "(function (thisObj) { thisObj instanceof Panel; })(this);",
+  });
+  const { path } = (await res.json()) as { path: string };
+  assert.ok(path.endsWith("Layer Tools.jsx"));
+
+  const incomplete = await api("POST", "/api/packages/inspect", { path });
+  assert.equal(incomplete.status, 200, JSON.stringify(incomplete.body));
+  assert.equal(incomplete.body.status, "incomplete");
+  assert.deepEqual(incomplete.body.detected.missing, ["version"]);
+  assert.equal(incomplete.body.id, "layer-tools");
+  assert.equal((await api("POST", "/api/packages/import", { path })).status, 400);
+  assert.match((await api("POST", "/api/packages/inspect", { path, overrides: { version: "1.2" } })).body.error, /version: must look like 1\.2\.3/);
+
+  const overrides = { version: "1.0.0", name: "Layer Tools" };
+  const ready = await api("POST", "/api/packages/inspect", { path, overrides });
+  assert.equal(ready.body.status, "new");
+  assert.deepEqual(ready.body.apps, ["aftereffects"]);
+  const added = await api("POST", "/api/packages/import", { path, overrides });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.name, "Layer Tools");
+  assert.deepEqual(added.body.keys, ["ae-script:layer tools.jsx"]);
+  await assert.rejects(stat(path), "the upload is gone once added");
+
+  // The colosave panel as a bare folder, no zeploy.json: it was added with
+  // one as "colosave", and the same panel joins that package.
+  const panel = join(root, "bare-colosave", "com.colosave.panel");
+  await writeCepPanel(panel, "com.colosave.panel");
+  const same = await api("POST", "/api/packages/inspect", { path: panel });
+  assert.equal(same.body.id, "colosave");
+  assert.equal(same.body.name, "Colosave");
+  assert.equal(same.body.detected.from, "CSXS/manifest.xml");
+  assert.deepEqual(same.body.detected.updates, { id: "colosave", name: "Colosave", version: "1.1.0" });
+  // Its manifest still says 1.0.0, which is in the repository with other files.
+  assert.equal(same.body.status, "conflict");
+  assert.match((await api("POST", "/api/packages/import", { path: panel })).body.error, /raise the version/);
+
+  const next = await api("POST", "/api/packages/import", { path: panel, overrides: { version: "1.2.0" } });
+  assert.equal(next.status, 200, JSON.stringify(next.body));
+  assert.deepEqual([next.body.id, next.body.version], ["colosave", "1.2.0"]);
+  const again = await api("POST", "/api/packages/inspect", { path: panel, overrides: { version: "1.2.0" } });
+  assert.equal(again.body.status, "same", "adding the same plugin twice is no conflict");
+});
+
 test("a download link only works with its job's token", async () => {
   const res = await fetch(`http://127.0.0.1:${server.port}/download/nope?t=x`);
   assert.equal(res.status, 404);

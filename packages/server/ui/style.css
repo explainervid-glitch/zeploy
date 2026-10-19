@@ -404,6 +404,15 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .pv-name { font-weight: 600; }
 .pv-status { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; color: var(--muted); }
 .pv-status.ok { color: var(--ok); }
+.pv-status.warn { color: var(--warn); }
+
+.detected { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.detected legend { padding: 0; margin-bottom: 8px; }
+.detected-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px 12px; }
+.detected-grid .field:nth-child(3), .detected-grid .field:nth-child(4) { grid-column: 1 / -1; }
+.detected-grid .input { flex: none; }
+.input.needs { border-color: var(--warn); }
+@media (max-width: 480px) { .detected-grid { grid-template-columns: minmax(0, 1fr); } }
 
 .error { font-size: 12px; color: var(--err); white-space: pre-line; }
 .ok-text { font-size: 12px; color: var(--ok); }
@@ -447,7 +456,7 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .toast.error { background: var(--err); color: #FFFFFF; }
 
 body.dragging::after {
-  content: "Drop a .zip to add it as a package";
+  content: "Drop a plugin to add it as a package";
   position: fixed;
   inset: 12px;
   display: grid;

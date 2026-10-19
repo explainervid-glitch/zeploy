@@ -17,6 +17,10 @@ export interface PackageRecord {
   file: string;
   addedAt: string;
   components: { type: string; source: string }[];
+  // Plugin identities ("cep:com.colosave.panel"), so a later version added
+  // without zeploy.json joins this package. Missing on packages added
+  // before zeploy read plugin files.
+  keys?: string[];
 }
 
 export interface AgentRecord {

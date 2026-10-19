@@ -13,7 +13,7 @@ import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
@@ -107,6 +107,24 @@ function lanAddresses(): string[] {
     .map((i) => i!.address);
 }
 
+// What can be dropped on the admin UI: a package zip or a plugin file. The
+// name becomes a file name in the staging folder, so no path characters.
+const UPLOAD_NAME = /^[^\\/:*?"<>|]{1,120}\.(zip|zxp|ccx|jsx|jsxbin|jsfl|py)$/i;
+
+const packageRequestSchema = z.object({
+  path: z.string().min(1),
+  // For a plugin without zeploy.json: details typed over the detected ones.
+  overrides: z
+    .object({
+      id: z.string().max(100),
+      name: z.string().max(200),
+      version: z.string().max(64),
+      extensionName: z.string().max(200),
+    })
+    .partial()
+    .optional(),
+});
+
 const jobRequestSchema = z.object({
   action: z.enum(["install", "uninstall"]),
   packageId: z.string().min(1),
@@ -126,6 +144,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const restartTimers = new Map<string, NodeJS.Timeout>();
   let agentBuild: AgentBuild | null = null;
   let port = options.port ?? P.DEFAULT_PORT;
+  // Files dropped on the UI but never added; nothing refers to them after a restart.
+  const uploadsDir = join(store.dir, "staging", "uploads");
+  await rm(uploadsDir, { recursive: true, force: true });
 
   // Jobs that were in flight when the server last stopped will never finish.
   for (const job of store.data.jobs) {
@@ -472,9 +493,14 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     req.on("close", () => sseClients.delete(res));
   }
 
-  async function uploadPackage(req: IncomingMessage): Promise<Awaited<ReturnType<typeof importPackage>>> {
-    const tmp = join(store.dir, "staging", `upload-${randomUUID()}.zip`);
-    await mkdir(join(store.dir, "staging"), { recursive: true });
+  // A file dropped on the admin UI in a browser, which cannot tell the server
+  // its path. It keeps its name, which zeploy reads (a .jsx names its
+  // package), and is added from there like any other path.
+  async function receiveUpload(req: IncomingMessage, name: string): Promise<string> {
+    if (!UPLOAD_NAME.test(name)) throw new HttpError(400, `cannot add ${name || "this file"}: not a package or plugin file`);
+    const dir = join(uploadsDir, randomUUID());
+    const file = join(dir, name);
+    await mkdir(dir, { recursive: true });
     let size = 0;
     try {
       await pipeline(
@@ -482,16 +508,23 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         async function* (source) {
           for await (const chunk of source) {
             size += (chunk as Buffer).length;
-            if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, "package larger than 1 GB");
+            if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, "file larger than 1 GB");
             yield chunk;
           }
         },
-        createWriteStream(tmp),
+        createWriteStream(file),
       );
-      return await importPackage(store, tmp);
-    } finally {
-      await rm(tmp, { force: true });
+    } catch (err) {
+      await rm(dir, { recursive: true, force: true });
+      throw err;
     }
+    return file;
+  }
+
+  // An uploaded file is not needed once it is in the repository.
+  async function dropUpload(path: string): Promise<void> {
+    const rel = relative(uploadsDir, path);
+    if (rel && !rel.startsWith("..") && !isAbsolute(rel)) await rm(dirname(path), { recursive: true, force: true });
   }
 
   function createJobs(body: z.infer<typeof jobRequestSchema>): JobRecord[] {
@@ -585,20 +618,18 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         return json(res, 200, job);
       }
       case "POST /api/packages/inspect": {
-        const { path } = z.object({ path: z.string().min(1) }).parse(await readJson(req));
-        return json(res, 200, await inspectPackage(store, path));
+        const { path, overrides } = packageRequestSchema.parse(await readJson(req));
+        return json(res, 200, await inspectPackage(store, path, overrides));
       }
       case "POST /api/packages/import": {
-        const { path } = z.object({ path: z.string().min(1) }).parse(await readJson(req));
-        const { record, apps } = await importPackage(store, path);
+        const { path, overrides } = packageRequestSchema.parse(await readJson(req));
+        const { record, apps } = await importPackage(store, path, overrides);
+        await dropUpload(path);
         changed();
         return json(res, 200, { ...record, apps });
       }
-      case "POST /api/packages/upload": {
-        const { record, apps } = await uploadPackage(req);
-        changed();
-        return json(res, 200, { ...record, apps });
-      }
+      case "POST /api/packages/upload":
+        return json(res, 200, { path: await receiveUpload(req, q("name")) });
       case "DELETE /api/packages":
         await removePackage(store, q("id"), q("version"));
         changed();

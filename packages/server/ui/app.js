@@ -60,7 +60,7 @@ async function api(method, path, body) {
   const init = { method, headers: { "x-zeploy-admin": token } };
   if (body instanceof Blob) {
     init.body = body;
-    init.headers["content-type"] = "application/zip";
+    init.headers["content-type"] = "application/octet-stream";
   } else if (body !== undefined) {
     init.body = JSON.stringify(body);
     init.headers["content-type"] = "application/json";
@@ -601,6 +601,19 @@ async function toggleJob(id) {
 let preview = null;
 let inspectSeq = 0;
 let inspectTimer = null;
+// For a plugin without zeploy.json: the detected details the admin changed,
+// sent along with every inspect and the import. Cleared for a new path.
+let overrides = {};
+
+const DETECTED_FIELDS = { name: "dt-name", version: "dt-version", id: "dt-id", extensionName: "dt-ext" };
+const FROM_LABELS = {
+  "CSXS/manifest.xml": "CSXS/manifest.xml",
+  "manifest.json": "its manifest.json",
+  "blender_manifest.toml": "blender_manifest.toml",
+  bl_info: "bl_info",
+  "the script": "the script",
+  "the file name": "the file name",
+};
 
 function resetPreview() {
   preview = null;
@@ -608,6 +621,25 @@ function resetPreview() {
   $("add-error").hidden = true;
   $("add-select-row").hidden = true;
   $("add-submit").disabled = false;
+}
+
+// The detected details as editable fields. Fields the admin is typing in
+// keep their text; the rest follow what the server worked out.
+function renderDetected() {
+  const d = preview?.detected;
+  $("add-detected").hidden = !d;
+  if (!d) return;
+  $("dt-from").textContent = `No zeploy.json: read from ${FROM_LABELS[d.from] ?? d.from}. Change anything that is wrong.`;
+  const values = { name: preview.name, version: preview.version, id: preview.id, extensionName: d.extensionName ?? "" };
+  for (const [key, id] of Object.entries(DETECTED_FIELDS)) {
+    const input = $(id);
+    if (document.activeElement !== input && !(key in overrides)) input.value = values[key];
+  }
+  $("dt-ext-row").hidden = d.extensionName === undefined;
+  $("dt-version").classList.toggle("needs", d.missing.includes("version"));
+  const u = d.updates;
+  $("dt-updates").hidden = !u;
+  if (u) $("dt-updates").textContent = `Another version of ${u.name}, which has ${u.version} in zeploy.`;
 }
 
 function showAddError(message) {
@@ -635,47 +667,68 @@ function renderPreview() {
     status.innerHTML = `${CHECK_ICON}Ready`;
   } else if (preview.status === "same") {
     status.textContent = "Already added";
+  } else if (preview.status === "incomplete") {
+    status.classList.add("warn");
+    status.textContent = "Needs a version";
+    $("add-submit").disabled = true;
   } else {
     status.textContent = "";
-    showAddError(`Version ${preview.version} is already added with other files. Raise "version" in zeploy.json.`);
+    const where = preview.detected ? "Raise the version." : `Raise "version" in zeploy.json.`;
+    showAddError(`Version ${preview.version} is already added with other files. ${where}`);
     $("add-submit").disabled = true;
   }
+  renderDetected();
+  const blocked = preview.status === "conflict" || preview.status === "incomplete";
   const targets = state.agents.filter((a) => preview.apps.some((app) => agentHasApp(a, app)));
-  $("add-select-row").hidden = preview.status === "conflict" || targets.length === 0;
+  $("add-select-row").hidden = blocked || targets.length === 0;
   $("add-select-label").textContent =
     `Then select the ${pcs(targets.length)} with ${listText(preview.apps.map((a) => APP_LABELS[a] ?? a))}`;
 }
 
-async function inspectNow() {
+// `editing`: re-checking after a detected field changed, so the preview and
+// the fields stay where they are until the answer comes.
+async function inspectNow(editing = false) {
   const path = $("add-path").value.trim();
   const seq = ++inspectSeq;
-  resetPreview();
+  if (!editing) {
+    resetPreview();
+    $("add-detected").hidden = true;
+  }
+  $("add-error").hidden = true;
   if (!path) return;
-  $("add-preview").hidden = false;
-  $("add-preview").style.removeProperty("--label");
-  $("pv-name").textContent = "Checking…";
-  $("pv-version").textContent = "";
-  $("pv-desc").textContent = "";
-  $("pv-status").textContent = "";
+  if (!editing) {
+    $("add-preview").hidden = false;
+    $("add-preview").style.removeProperty("--label");
+    $("pv-name").textContent = "Checking…";
+    $("pv-version").textContent = "";
+    $("pv-desc").textContent = "";
+    $("pv-status").textContent = "";
+  }
   try {
-    const p = await api("POST", "/api/packages/inspect", { path });
+    const p = await api("POST", "/api/packages/inspect", { path, overrides });
     if (seq !== inspectSeq) return;
     preview = p;
+    $("add-submit").disabled = false;
     renderPreview();
   } catch (err) {
     if (seq !== inspectSeq) return;
-    $("add-preview").hidden = true;
+    if (!editing) $("add-preview").hidden = true;
+    $("add-submit").disabled = editing;
     showAddError(err.message);
   }
 }
 
-function openAdd() {
+// Opens the Add dialog, empty or with a path to check right away.
+function openAdd(path = "") {
   resetPreview();
-  $("add-path").value = "";
+  overrides = {};
+  $("add-detected").hidden = true;
+  $("add-path").value = path;
   $("pick-folder").hidden = !desktop;
   $("add-select").checked = remember.get("autoSelect") !== "0";
-  $("add-dialog").showModal();
-  $("add-path").focus();
+  if (!$("add-dialog").open) $("add-dialog").showModal();
+  if (path) void inspectNow();
+  else $("add-path").focus();
 }
 
 function afterAdd(record, autoSelect) {
@@ -689,14 +742,20 @@ function afterAdd(record, autoSelect) {
   }
 }
 
-async function uploadZip(file) {
-  if (!/\.zip$/i.test(file.name)) {
-    toast("Only .zip files can be added by drag and drop.", true);
+const PLUGIN_FILE = /\.(zip|zxp|ccx|jsx|jsxbin|jsfl|py)$/i;
+
+// A dropped or picked file (or, in the desktop app, folder) opens the Add
+// dialog with it. The desktop app knows its path; a browser uploads it first.
+async function addFile(file) {
+  const path = desktop?.pathForFile?.(file);
+  if (path) return openAdd(path);
+  if (!PLUGIN_FILE.test(file.name)) {
+    toast("Drop a .zip, .zxp, .ccx, .jsx, .jsxbin, .jsfl or .py file. A folder works in the zeploy app, or type its path.", true);
     return;
   }
   try {
-    const record = await api("POST", "/api/packages/upload", file);
-    afterAdd(record, remember.get("autoSelect") !== "0");
+    const { path: uploaded } = await api("POST", `/api/packages/upload?name=${encodeURIComponent(file.name)}`, file);
+    openAdd(uploaded);
   } catch (err) {
     toast(err.message, true);
   }
@@ -836,7 +895,7 @@ $("tab-activity").addEventListener("click", () => {
   render();
 });
 $("connect-pc").addEventListener("click", () => state && openConnect());
-$("add-package").addEventListener("click", openAdd);
+$("add-package").addEventListener("click", () => openAdd());
 $("do-install").addEventListener("click", () => runAction("install"));
 $("do-uninstall").addEventListener("click", () => runAction("uninstall"));
 $("clear-selection").addEventListener("click", () => {
@@ -848,32 +907,49 @@ $("update-agents").addEventListener("click", () =>
 );
 
 $("add-path").addEventListener("input", () => {
+  overrides = {};
   clearTimeout(inspectTimer);
-  inspectTimer = setTimeout(inspectNow, 350);
+  inspectTimer = setTimeout(() => inspectNow(), 350);
 });
 $("pick-folder").addEventListener("click", async () => {
-  const path = await desktop?.pickFolder("Choose a plugin folder (with zeploy.json)");
-  if (!path) return;
-  $("add-path").value = path;
-  void inspectNow();
+  const path = await desktop?.pickFolder("Choose a plugin folder");
+  if (path) openAdd(path);
 });
+$("pick-file").addEventListener("click", async () => {
+  if (!desktop?.pickFile) return $("file-input").click();
+  const path = await desktop.pickFile("Choose a plugin file");
+  if (path) openAdd(path);
+});
+$("file-input").addEventListener("change", () => {
+  const file = $("file-input").files[0];
+  $("file-input").value = "";
+  if (file) void addFile(file);
+});
+for (const [key, id] of Object.entries(DETECTED_FIELDS)) {
+  $(id).addEventListener("input", () => {
+    overrides[key] = $(id).value;
+    clearTimeout(inspectTimer);
+    inspectTimer = setTimeout(() => inspectNow(true), 350);
+  });
+}
 $("add-select").addEventListener("change", () => remember.set("autoSelect", $("add-select").checked ? "1" : "0"));
 $("add-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const path = $("add-path").value.trim();
   if (!path) {
-    showAddError("Enter the path of a plugin folder or .zip file.");
+    showAddError("Enter the path of a plugin folder or file.");
     return;
   }
+  clearTimeout(inspectTimer);
   $("add-submit").disabled = true;
   try {
-    const record = await api("POST", "/api/packages/import", { path });
+    const record = await api("POST", "/api/packages/import", { path, overrides });
     $("add-dialog").close();
     afterAdd(record, $("add-select").checked);
   } catch (err) {
     showAddError(err.message);
   } finally {
-    $("add-submit").disabled = preview?.status === "conflict";
+    $("add-submit").disabled = preview?.status === "conflict" || preview?.status === "incomplete";
   }
 });
 
@@ -897,7 +973,7 @@ $("rename-form").addEventListener("submit", (event) => {
 });
 $("rename-reset").addEventListener("click", () => void saveRename(""));
 
-// Drag a .zip anywhere onto the window to add it.
+// Drag a plugin file (or, in the desktop app, folder) anywhere onto the window to add it.
 let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
 document.addEventListener("dragenter", (event) => {
@@ -918,7 +994,7 @@ document.addEventListener("drop", (event) => {
   dragDepth = 0;
   document.body.classList.remove("dragging");
   const file = event.dataTransfer.files[0];
-  if (file) void uploadZip(file);
+  if (file) void addFile(file);
 });
 
 // ---- live updates -------------------------------------------------------------------------

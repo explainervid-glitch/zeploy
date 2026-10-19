@@ -1,6 +1,7 @@
 export * from "./actions.ts";
 export * from "./env.ts";
 export * from "./executor.ts";
+export * from "./infer.ts";
 export * from "./installer.ts";
 export * from "./manifest.ts";
 export * from "./package.ts";

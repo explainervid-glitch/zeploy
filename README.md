@@ -7,8 +7,10 @@ the team's PCs over the LAN.
   packages and shows which PC has which version.
 - A small **agent** runs on every team PC. It receives install and remove
   jobs from the admin app, installs the plugin, and reports back.
-- A **package** is a plugin folder with a `zeploy.json` file that says what
-  the plugin contains. zeploy works out where each part goes.
+- A **package** is one plugin as zeploy stores it. Add a CEP panel, `.zxp`,
+  Blender add-on or script as it is and zeploy reads its name and version, or
+  write a `zeploy.json` to combine several parts. zeploy works out where each
+  part goes.
 
 A visual walkthrough of the flow is in
 [docs/zeploy-workflow.html](docs/zeploy-workflow.html) (in Indonesian; it
@@ -258,11 +260,42 @@ zeploy was called zdeploy before. Nothing has to be set up again:
 
 ## 3. Make a package
 
-A package is a folder with `zeploy.json` at its root, next to the plugin
-files. zeploy reads only `zeploy.json` and the files its components point
-at, so the package folder can be the plugin's working folder.
+Most plugins need no packaging: add them as they are and zeploy reads their
+name and version. Write a `zeploy.json` only to combine several parts into one
+package (a CEP panel plus the JSFL commands it calls) or to set install
+options.
+
+### Plugins without zeploy.json
+
+| Add | zeploy reads | Installs as |
+| --- | --- | --- |
+| CEP panel folder | id (`ExtensionBundleId`), name (`ExtensionBundleName` or the panel's menu name), version (`ExtensionBundleVersion`), apps (`<Host>`) from `CSXS/manifest.xml` | `cep` |
+| `.zip` holding a CEP panel | the same, from inside the zip | `cep` |
+| `.zxp` | the same, from `CSXS/manifest.xml` inside it | `zxp` |
+| `.ccx` (UXP) | `id`, `name`, `version`, `host` from `manifest.json` inside it | `zxp` |
+| Blender extension (`.zip` or folder with `blender_manifest.toml`) | `id`, `name`, `version` | `blender` |
+| Blender legacy add-on (`.zip` or folder with `__init__.py`, or one `.py`) | `name` and `version` from `bl_info`; the id is the folder or file name | `blender` (a folder is zipped) |
+| `.jsx` / `.jsxbin` | the file name; a version only if the script states one (`@version 1.2.0` or `SCRIPT_VERSION = "1.2.0"`) | `ae-script`: `ScriptUI Panels` when it builds its UI in a `Panel`, else `Scripts` |
+| `.jsfl` | the same | `jsfl` in `Commands` |
+
+- A folder that holds exactly one of these one level down, such as a release
+  folder with one `.zxp`, works too. A folder with several asks you to pick one.
+- The Add dialog shows what zeploy read, and you can change the name, version
+  and id there. A script that states no version needs one typed in.
+- For a `.zxp` or `.ccx`, the dialog also shows the name Adobe's
+  UnifiedPluginInstallerAgent lists it under (`/list all`); zeploy needs it to
+  remove the extension.
+- A later version of a plugin joins the package it was first added as, by
+  the plugin's own id (bundle id, extension id, module or file name), even if
+  that package had a `zeploy.json` with another id. So releasing is: bump the
+  version in the plugin's manifest and add it again.
+- Versions are read as `major.minor.patch`: `1.4` becomes `1.4.0`.
 
 ### Write zeploy.json
+
+A package with `zeploy.json` is a folder with that file at its root, next to
+the plugin files. zeploy reads only `zeploy.json` and the files its
+components point at, so the package folder can be the plugin's working folder.
 
 ```json
 {
@@ -383,17 +416,25 @@ Everything here happens in the admin app.
 
 ### Add a package
 
-Click **Add package**, then enter or choose the package folder (the one with
-`zeploy.json`), or a `.zip` made by `zeploy pack`. You can also drag a
-`.zip` onto the window.
+Click **Add package**, then enter or choose a plugin (**Folder** or **File**),
+or drag it onto the window. That can be:
+
+- a plugin as it is, without `zeploy.json` (see
+  [Plugins without zeploy.json](#plugins-without-zeployjson)): a CEP panel
+  folder, `.zxp`, `.ccx`, Blender extension or add-on, `.jsx`, `.jsxbin` or
+  `.jsfl`;
+- a package folder with `zeploy.json`, or a `.zip` made by `zeploy pack`.
+
+Dropping a folder works in the zeploy app; in a browser, drop a file or type
+the folder's path.
 
 To try zeploy on the team PCs first, add `examples\test-panel`: a do-nothing
 After Effects panel (`com.zeploy.testpanel`) that is safe to install and
 remove, and that leaves the registry alone.
 
 The admin app checks the package, zips it and stores it with its SHA-256. Each
-version can be added once. If the content changed, raise `version` in
-`zeploy.json` and add it again.
+version can be added once. If the content changed, raise the version (in the
+plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 ### Read the table
 
@@ -518,7 +559,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 
 | Problem | Fix |
 | --- | --- |
-| Adding a package says `... is already in the repository with different content` | Raise `version` in `zeploy.json` |
+| Adding a package says `... is already in the repository with different content` | Raise the version: in the plugin's manifest, in `zeploy.json`, or in the Add dialog |
 | The admin app says `The admin server could not start` | Another admin app or `npm run server` is using port 7420. Close it |
 | The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe` |
 | `electron.exe` is missing after `npm install` | Run `npm run setup:electron` |

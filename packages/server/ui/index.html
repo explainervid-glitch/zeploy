@@ -77,11 +77,14 @@
         </button>
       </div>
       <div class="sheet-body">
-        <label for="add-path" class="label">Plugin folder or .zip (or drop it on the window)</label>
+        <label for="add-path" class="label">Plugin folder or file (or drop it on the window)</label>
         <div class="row">
           <input id="add-path" class="input code" type="text" spellcheck="false" autocomplete="off" placeholder="Z:\...\colosave-plugin">
-          <button type="button" id="pick-folder" class="btn" hidden>Choose</button>
+          <button type="button" id="pick-folder" class="btn" hidden>Folder</button>
+          <button type="button" id="pick-file" class="btn">File</button>
+          <input type="file" id="file-input" accept=".zip,.zxp,.ccx,.jsx,.jsxbin,.jsfl,.py" hidden>
         </div>
+        <p class="muted small">A CEP panel folder, .zxp, .ccx, Blender extension or add-on, .jsx or .jsfl. zeploy reads its name and version; zeploy.json is only needed to combine several parts.</p>
         <div id="add-preview" class="preview" hidden>
           <div class="preview-main">
             <span><span id="pv-name" class="pv-name"></span> <span id="pv-version" class="code muted small"></span></span>
@@ -89,6 +92,20 @@
           </div>
           <span id="pv-status" class="pv-status"></span>
         </div>
+        <fieldset id="add-detected" class="detected" hidden>
+          <legend id="dt-from" class="muted small"></legend>
+          <div class="detected-grid">
+            <label class="field"><span class="label">Name</span>
+              <input id="dt-name" class="input" type="text" autocomplete="off" data-override="name"></label>
+            <label class="field"><span class="label">Version</span>
+              <input id="dt-version" class="input code" type="text" autocomplete="off" spellcheck="false" placeholder="1.0.0" data-override="version"></label>
+            <label class="field"><span class="label">ID</span>
+              <input id="dt-id" class="input code" type="text" autocomplete="off" spellcheck="false" data-override="id"></label>
+            <label id="dt-ext-row" class="field" hidden><span class="label" title="As UnifiedPluginInstallerAgent /list all shows it; zeploy needs it to remove the extension">Name in Adobe's extension list</span>
+              <input id="dt-ext" class="input" type="text" autocomplete="off" data-override="extensionName"></label>
+          </div>
+          <p id="dt-updates" class="muted small" hidden></p>
+        </fieldset>
         <p id="add-error" class="error" role="alert" hidden></p>
         <label id="add-select-row" class="check" hidden>
           <input type="checkbox" id="add-select" checked> <span id="add-select-label"></span>

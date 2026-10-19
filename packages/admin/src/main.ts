@@ -59,6 +59,18 @@ async function boot(): Promise<void> {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+  ipcMain.handle("pick-file", async (event, title: unknown) => {
+    if (!event.senderFrame?.url.startsWith(adminUrl) || !win) return null;
+    const result = await dialog.showOpenDialog(win, {
+      title: typeof title === "string" && title ? title.slice(0, 120) : "Choose a file",
+      properties: ["openFile"],
+      filters: [
+        { name: "Plugins and packages", extensions: ["zip", "zxp", "ccx", "jsx", "jsxbin", "jsfl", "py"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
 
   win = new BrowserWindow({
     width: 1280,

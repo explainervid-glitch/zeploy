@@ -15,6 +15,7 @@
     "build": "node scripts/build.mjs all",
     "build:admin": "node scripts/build.mjs admin",
     "build:agent": "node scripts/build.mjs agent",
+    "package": "node scripts/build.mjs package",
     "setup:electron": "node node_modules/electron/install.js",
     "test": "node --test \"packages/*/test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"

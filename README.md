@@ -760,6 +760,7 @@ the root and the packages import each other by relative path.
 | `npm run build:agent` | `%LOCALAPPDATA%\zeploy-build\zeploy-agent\zeploy-agent.exe`, and `zeploy-agent.json` with its version |
 | `npm run build:admin` | `%LOCALAPPDATA%\zeploy-build\admin` and the runnable copy in `%LOCALAPPDATA%\Programs\zeploy-admin` |
 | `npm run admin` | `build:admin`, then start the admin app |
+| `npm run package` | Both, ready to hand out, in `dist\zeploy-<version>` (ignored by git): `zeploy-admin\zeploy-admin.exe` with its Electron runtime, and `zeploy-agent\zeploy-agent.exe`. Copy the admin folder to a local disk to run it; Electron does not start from a network share |
 | `npm run server` | Admin server without Electron (open `http://127.0.0.1:7420/`) |
 | `npm run agent -- <command>` | Agent from source, e.g. `status` or `run` (not `setup`, which needs the built exe) |
 | `npm run zeploy -- <command>` | The `zeploy` command line |

@@ -4,6 +4,8 @@
 //       runtime at %LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe
 //   node scripts/build.mjs agent
 //       <build>\zeploy-agent\zeploy-agent.exe (Node single executable)
+//   node scripts/build.mjs package
+//       both, ready to hand out, in <repo>\dist\zeploy-<version>
 //
 // The sources are TypeScript run directly by Node during development; esbuild
 // bundles them into one CommonJS file for Electron and for the Node SEA blob.
@@ -30,28 +32,29 @@ async function readText(path) {
 }
 
 // Copies the Electron runtime (only when its version changed) and the app
-// files into adminInstallDir, with electron.exe renamed to zeploy-admin.exe.
-async function assembleAdmin(appDir) {
+// files into `dir` (by default adminInstallDir), with electron.exe renamed
+// to zeploy-admin.exe.
+async function assembleAdmin(appDir, dir = adminInstallDir) {
   const electronDist = r("node_modules", "electron", "dist");
   const electronVersion = await readText(join(electronDist, "version"));
   if (!electronVersion) throw new Error("Electron runtime missing; run: npm run setup:electron");
-  if ((await readText(join(adminInstallDir, "version"))) !== electronVersion) {
-    console.log(`copying Electron ${electronVersion.trim()} to ${adminInstallDir}`);
-    await rm(adminInstallDir, { recursive: true, force: true });
-    await cp(electronDist, adminInstallDir, {
+  if ((await readText(join(dir, "version"))) !== electronVersion) {
+    console.log(`copying Electron ${electronVersion.trim()} to ${dir}`);
+    await rm(dir, { recursive: true, force: true });
+    await cp(electronDist, dir, {
       recursive: true,
       filter: (src) => basename(src).toLowerCase() !== "electron.exe" || src === electronDist,
     });
-    await copyFile(join(electronDist, "electron.exe"), join(adminInstallDir, "zeploy-admin.exe"));
+    await copyFile(join(electronDist, "electron.exe"), join(dir, "zeploy-admin.exe"));
   }
-  const resourcesApp = join(adminInstallDir, "resources", "app");
+  const resourcesApp = join(dir, "resources", "app");
   await rm(resourcesApp, { recursive: true, force: true });
   await cp(appDir, resourcesApp, { recursive: true });
-  const exe = join(adminInstallDir, "zeploy-admin.exe");
+  const exe = join(dir, "zeploy-admin.exe");
   console.log(`admin app ready: ${exe}`);
 
   // The copy assembled before the app was renamed from "zdeploy".
-  if (!process.env.ZEPLOY_ADMIN_OUT) {
+  if (dir === adminInstallDir && !process.env.ZEPLOY_ADMIN_OUT) {
     const legacy = join(process.env.LOCALAPPDATA ?? root, "Programs", "zdeploy-admin");
     await rm(legacy, { recursive: true, force: true }).then(
       () => {},
@@ -97,7 +100,11 @@ async function buildAdmin() {
     JSON.stringify({ name: "zeploy-admin", productName: "zeploy", version, main: "main.cjs" }, null, 2),
   );
   console.log(`built ${out}`);
-  const exe = await assembleAdmin(out);
+  return out;
+}
+
+async function buildAndInstallAdmin() {
+  const exe = await assembleAdmin(await buildAdmin());
   if (process.argv.includes("--launch")) {
     spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
   }
@@ -149,7 +156,27 @@ async function buildAgent() {
   console.log(`built ${exe} (${built})`);
 }
 
+// Both deliverables, ready to hand out, in <repo>\dist\zeploy-<version>
+// (ignored by git): the admin app with its Electron runtime, and the agent
+// exe for setting up a PC by hand. Assembled on the local disk first and
+// then copied, so nothing is ever deleted inside dist (see the note at the
+// top about the network share).
+async function packageAll() {
+  await buildAgent();
+  const appDir = await buildAdmin();
+  const staged = join(buildDir, "package");
+  await assembleAdmin(appDir, join(staged, "zeploy-admin"));
+  const dest = r("dist", `zeploy-${version}`);
+  await mkdir(join(dest, "zeploy-agent"), { recursive: true });
+  await cp(join(staged, "zeploy-admin"), join(dest, "zeploy-admin"), { recursive: true, force: true });
+  await copyFile(join(buildDir, "zeploy-agent", "zeploy-agent.exe"), join(dest, "zeploy-agent", "zeploy-agent.exe"));
+  console.log(`packaged ${dest}`);
+  console.log(`  zeploy-admin\\zeploy-admin.exe  the admin app; copy the whole folder to a local disk to run it`);
+  console.log(`  zeploy-agent\\zeploy-agent.exe  the agent, for zeploy-agent setup on a PC`);
+}
+
 // The agent first: the admin app bundles it.
 const target = process.argv[2] ?? "all";
+if (target === "package") await packageAll();
 if (target === "agent" || target === "all") await buildAgent();
-if (target === "admin" || target === "all") await buildAdmin();
+if (target === "admin" || target === "all") await buildAndInstallAdmin();

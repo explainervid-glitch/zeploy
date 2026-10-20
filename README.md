@@ -446,20 +446,25 @@ plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app.
 
-- ◆ filled: the latest version is installed.
-- ◇ outline: an older version is installed. The cell shows which.
-- Dashed blue ◇ with "Found 1.0.0": the plugin is on that PC, but zeploy did
-  not install it (copied by hand, or installed before zeploy). Hover for where
-  it was found. Selecting the cell offers **Replace**: zeploy installs its
-  version over it, and from then on the cell is a normal ◆ or ◇.
-- Empty: not installed.
-- Pulsing: a job is queued or running.
-- "Failed" in red: the last job for that cell failed. Open it under
-  **Activity** to see why.
-- Half-filled amber ◆ with "Partial": a Blender add-on installed in some
-  Blender versions and failed in others (needs agent 0.5.0). Hover to see
-  which. **Activity** shows the job as "Partly done", with **Retry**; select
-  the cell to retry it too. The **Failed** filter includes these PCs.
+| Mark | Means |
+| --- | --- |
+| `[✓]` in the package's colour | The latest version is installed |
+| `[↑]` amber, "Update" | An older version is installed; hover to see which |
+| `·` | Not installed |
+| `[⠋]` blue, spinning | Installing or removing |
+| `[…]` gray, "Queued" | Waiting for the PC to come online |
+| `[✗]` red, "Failed" | The last job failed; open it under **Activity** to see why |
+| `[!]` amber, "Partial" | A Blender add-on installed in some Blender versions and failed in others (agent 0.5.0); hover to see which |
+| `[?]` blue, "Found 1.0.0" | On the PC, but not installed by zeploy |
+
+- **Found:** the plugin was copied by hand or installed before zeploy. Hover
+  for where it was found. Selecting the cell offers **Replace**: zeploy
+  installs its version over it, and from then on the cell is a normal `[✓]`
+  or `[↑]`.
+- **Partial:** **Activity** shows the job as "Partly done", with **Retry**;
+  select the cell to retry it too. The **Failed** filter includes these PCs.
+
+**Activity** uses the same marks, plus a green `[✓]` for a job that is done.
 
 Each row also shows the PC's user, its IP address, whether it is online, and
 the Adobe and Blender versions its agent found. Connected PCs are listed even
@@ -490,7 +495,7 @@ is found through the CEP panel it installed. A `.ccx` is not found.
    **Reinstall N**, or **Apply N** for a mix.
 
 Updating is the same: get the new version into zeploy, then install it on
-the PCs that show ◇. Files the old version installed and the new one does not
+the PCs that show `[↑]`. Files the old version installed and the new one does not
 are removed.
 
 To get a new version into zeploy, hover over the package name and click
@@ -509,7 +514,7 @@ is queued; open it under **Activity** to cancel it.
 
 ### Remove from PCs
 
-Click the cells of the PCs to remove a plugin from (a filled ◆ or ◇ means it
+Click the cells of the PCs to remove a plugin from (`[✓]` or `[↑]` means it
 is installed there). The side panel then shows a red **Remove N from PCs**,
 where N counts the selected cells that have the plugin; the others are
 skipped. Click it and confirm. The agent removes exactly what zeploy

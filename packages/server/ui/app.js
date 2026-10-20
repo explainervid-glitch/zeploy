@@ -9,6 +9,18 @@ const desktop = window.zeployDesktop ?? null;
 // In the desktop app the top bar is also the window's title bar (style.css).
 if (desktop) document.documentElement.classList.add("desktop");
 
+// The braille spinner in every busy status mark ([⠋]): one frame variable
+// for all of them (style.css). Still when motion is reduced.
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  let frame = 0;
+  setInterval(() => {
+    if (!document.querySelector(".key.busy")) return;
+    frame = (frame + 1) % SPIN.length;
+    document.documentElement.style.setProperty("--spin", `"${SPIN[frame]}"`);
+  }, 100);
+}
+
 // After Effects' layer label colors, one per package.
 const LABELS = ["#E4D84C", "#A9CBC7", "#677DE0", "#E8920D", "#E5BCC9", "#4AA44C", "#A9A9CA", "#3DA2A5", "#F46DD6", "#E7C19E", "#B3C7B3", "#A89677"];
 const APP_SHORT = { aftereffects: "AE", premiere: "Premiere", animate: "Animate" };

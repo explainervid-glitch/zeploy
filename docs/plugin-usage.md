@@ -26,8 +26,8 @@ Copy the helper for the plugin's platform from `examples/usage/` unchanged:
 | Plugin | Helper | Create |
 | --- | --- | --- |
 | CEP panel (AE, Premiere, Illustrator, Animate) | `zeploy-usage.js`, loaded in the panel's HTML | `zeployUsageV1(id, version)` (the app is read from CSInterface) |
-| After Effects or Illustrator script, CEP host side | `zeploy-usage.jsx`, `#include`d or pasted at the top | `zeployUsageV1(id, version, app)` |
-| Animate JSFL command | `zeploy-usage.jsfl`, pasted at the top | `zeployUsageV1(id, version)` |
+| After Effects or Illustrator script, host script of an AE, Premiere or Illustrator panel | `zeploy-usage.jsx`, `#include`d or pasted at the top | `zeployUsageV1(id, version, app)` |
+| Animate JSFL command, host script of an Animate panel (it runs in Animate's JSFL engine) | `zeploy-usage.jsfl`, pasted at the top | `zeployUsageV1(id, version)` |
 | Blender add-on or extension | `zeploy_usage.py`, a module in the add-on | `zeploy_usage.Usage(id, version)` |
 
 Every helper offers `action(name, ms?)`, `error(name)` and `track(name, fn)`

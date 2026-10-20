@@ -85,9 +85,14 @@ For a script that does one thing, use `run`.
 2. Add the matching helper file to the project unchanged:
    - CEP panel: `zeploy-usage.js`, loaded with a `<script>` tag in the
      panel's HTML before the panel's own scripts (after `CSInterface.js` if
-     the panel loads it). If the panel's ExtendScript host side has features
-     worth counting on its own, add `zeploy-usage.jsx` there too, with
-     `"aftereffects"`, `"premiere"` or `"illustrator"` as the app.
+     the panel loads it). If the panel's host script (its `ScriptPath`) has
+     features worth counting on its own, count them there instead: with
+     `zeploy-usage.jsx` and `"aftereffects"`, `"premiere"` or
+     `"illustrator"` as the app; for an **Animate** panel the host script
+     runs in Animate's JSFL engine (it calls `fl.*`), so paste
+     `zeploy-usage.jsfl` at its top. Counting where the work runs is usually
+     simplest: the host function that does the work counts once it
+     succeeds.
    - After Effects or Illustrator script: `zeploy-usage.jsx`, `#include`d
      (or pasted at the top for a single-file script), with
      `"aftereffects"` or `"illustrator"` as the app.

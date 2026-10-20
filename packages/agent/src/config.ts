@@ -4,10 +4,16 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { migrateLegacyDir } from "../../core/src/index.ts";
-import { DEFAULT_PORT } from "../../protocol/src/index.ts";
+import { normalizeServerUrl } from "../../protocol/src/index.ts";
+
+export { normalizeServerUrl };
 
 export interface AgentConfig {
+  // The admin computer setup was run for. Agents before 0.7.0 read only this.
   serverUrl?: string;
+  // Every admin computer to connect to, serverUrl among them. Admins add and
+  // remove entries (see the protocol's "admins" message).
+  servers?: string[];
   token?: string;
   agentId?: string;
 }
@@ -39,12 +45,9 @@ export function newAgentId(): string {
   return randomUUID();
 }
 
-// "192.168.1.10", "192.168.1.10:7420" and "http://192.168.1.10:7420/" all
-// become "http://192.168.1.10:7420".
-export function normalizeServerUrl(input: string): string {
-  let url = input.trim();
-  if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
-  const parsed = new URL(url);
-  if (!parsed.port) parsed.port = String(DEFAULT_PORT);
-  return `${parsed.protocol}//${parsed.host}`;
+// The admin computers to connect to: the saved list with the one setup was
+// last run for first.
+export function serversOf(config: AgentConfig): string[] {
+  const list = [config.serverUrl, ...(config.servers ?? [])].filter((s): s is string => !!s);
+  return [...new Set(list.map(normalizeServerUrl))];
 }

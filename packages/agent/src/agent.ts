@@ -36,6 +36,12 @@ export interface AgentOptions {
   updater?: AgentUpdater;
   // Called once a newer agent has taken over; the process should exit.
   onReplaced?: () => void;
+  // With connections to several admins (admins.ts): runs one job at a time
+  // across all of them, reports every connection, and takes the admins'
+  // changes to the list.
+  exclusive?: <T>(run: () => Promise<T>) => Promise<T>;
+  admins?: () => P.AdminLink[];
+  onAdmins?: (change: { add: string[]; remove: string[] }) => void;
   // Test seams.
   detect?: () => Promise<Environment>;
   exec?: Pick<ExecuteOptions, "processes" | "kill">;
@@ -47,6 +53,8 @@ export interface RunningAgent {
   stop(): Promise<void>;
   // Resolves when every job received so far has finished.
   idle(): Promise<void>;
+  // Sends the admin what is installed (and how the other connections are).
+  report(): void;
 }
 
 const SILENCE_LIMIT_MS = 75_000;
@@ -61,7 +69,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
     hostname: hostname(),
     user: userInfo().username,
     agentVersion: AGENT_VERSION,
-    features: options.updater ? [P.FEATURE_SELF_UPDATE] : [],
+    features: [...(options.updater ? [P.FEATURE_SELF_UPDATE] : []), ...(options.onAdmins ? [P.FEATURE_ADMINS] : [])],
     ...options.info,
   };
 
@@ -103,6 +111,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
             ...(r.failed?.length ? { failed: r.failed.map((f) => f.part) } : {}),
           })),
           found,
+          ...(options.admins ? { admins: options.admins() } : {}),
         },
       });
     } catch (err) {
@@ -214,8 +223,13 @@ export function startAgent(options: AgentOptions): RunningAgent {
       case "refresh":
         void sendState();
         return;
-      case "job":
-        jobs = jobs.then(() => runJob(message.job));
+      case "job": {
+        const { job } = message;
+        jobs = jobs.then(() => (options.exclusive ? options.exclusive(() => runJob(job)) : runJob(job)));
+        return;
+      }
+      case "admins":
+        options.onAdmins?.({ add: message.add, remove: message.remove });
         return;
     }
   }
@@ -302,6 +316,9 @@ export function startAgent(options: AgentOptions): RunningAgent {
       return channel !== null;
     },
     idle: () => jobs,
+    report() {
+      if (channel) void sendState();
+    },
     async stop() {
       stopped = true;
       if (retryTimer) clearTimeout(retryTimer);

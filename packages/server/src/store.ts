@@ -73,6 +73,11 @@ export interface StoreData {
   version: 1;
   // Shared secret every agent is configured with.
   enrollToken: string;
+  // The team's other admin computers ("http://192.168.1.80:7420"), which
+  // agents connect to as well, and the ones removed, so agents that were
+  // offline then drop them when they connect.
+  admins?: string[];
+  removedAdmins?: string[];
   packages: PackageRecord[];
   agents: Record<string, AgentRecord>;
   jobs: JobRecord[];

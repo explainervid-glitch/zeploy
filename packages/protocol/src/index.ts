@@ -45,6 +45,8 @@ export const challengeSchema = z.object({
 // only sends a job to an agent that lists its feature, so an older agent
 // never receives a message it cannot parse.
 export const FEATURE_SELF_UPDATE = "self-update";
+// Connects to several admin computers and takes "admins" messages (0.7.0).
+export const FEATURE_ADMINS = "admins";
 
 export const agentInfoSchema = z.object({
   hostname: z.string().max(256),
@@ -172,7 +174,34 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("job"), job: jobSpecSchema }),
   z.object({ type: z.literal("refresh") }),
   z.object({ type: z.literal("ping") }),
+  // Other admin computers of the team ("http://192.168.1.80:7420") to
+  // connect to as well, or to stop connecting to. Only for agents with
+  // FEATURE_ADMINS. Only addresses cross the wire: every admin of a team
+  // uses the same team token, which each agent already has.
+  z.object({
+    type: z.literal("admins"),
+    add: z.array(z.string().max(300)).max(16),
+    remove: z.array(z.string().max(300)).max(64),
+  }),
 ]);
+
+// "192.168.1.10", "192.168.1.10:7420" and "http://192.168.1.10:7420/" all
+// become "http://192.168.1.10:7420".
+export function normalizeServerUrl(input: string): string {
+  let url = input.trim();
+  if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+  const parsed = new URL(url);
+  if (!parsed.port) parsed.port = String(DEFAULT_PORT);
+  return `${parsed.protocol}//${parsed.host}`;
+}
+
+export const adminLinkSchema = z.object({
+  url: z.string().max(300),
+  status: z.enum(["connecting", "connected", "disconnected", "rejected"]),
+  // The admin this report is sent to.
+  current: z.boolean().optional(),
+});
+export type AdminLink = z.infer<typeof adminLinkSchema>;
 
 export const agentStateSchema = z.object({
   isAdmin: z.boolean(),
@@ -193,6 +222,9 @@ export const agentStateSchema = z.object({
     .array(z.object({ key: z.string().max(300), version: z.string().max(64).nullable(), where: z.string().max(200) }))
     .max(500)
     .optional(),
+  // Every admin computer this agent connects to, and how that is going.
+  // From agent 0.7.0.
+  admins: z.array(adminLinkSchema).max(16).optional(),
 });
 
 export const agentMessageSchema = z.discriminatedUnion("type", [

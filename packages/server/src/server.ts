@@ -112,6 +112,10 @@ function lanAddresses(): string[] {
 // name becomes a file name in the staging folder, so no path characters.
 const UPLOAD_NAME = /^[^\\/:*?"<>|]{1,120}\.(zip|zxp|ccx|jsx|jsxbin|jsfl|py)$/i;
 
+// An admin computer's address: a name or IPv4 address, optionally with a
+// port and an http:// in front.
+const SAFE_ADDRESS = /^(https?:\/\/)?[A-Za-z0-9.-]+(:\d{1,5})?\/?$/;
+
 const packageRequestSchema = z.object({
   path: z.string().min(1),
   // For a plugin without zeploy.json: details typed over the detected ones.
@@ -168,6 +172,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       port,
       addresses: lanAddresses(),
       installerReady: !!options.agentExe && existsSync(options.agentExe),
+      admins: store.data.admins ?? [],
       // The agent version PCs can update to; null until the exe is hashed.
       agentBuild: agentBuild ? { version: agentBuild.version } : null,
       agents: Object.values(store.data.agents).map((a) => ({
@@ -322,7 +327,58 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     const pending = store.data.jobs.find((j) => j.agentId === conn.agentId && (j.status === "sent" || j.status === "running"));
     if (pending) settleOnReconnect(pending, info.agentVersion);
     changed();
+    const add = store.data.admins ?? [];
+    const remove = store.data.removedAdmins ?? [];
+    if (info.features?.includes(P.FEATURE_ADMINS) && (add.length || remove.length)) {
+      conn.ws.send(conn.channel.seal({ type: "admins", add, remove } satisfies P.ServerMessage));
+    }
     pump(conn.agentId);
+  }
+
+  // Tells every connected agent that understands it about a change to the admin list.
+  function pushAdmins(add: string[], remove: string[]): void {
+    for (const conn of conns.values()) {
+      if (!store.data.agents[conn.agentId]?.features?.includes(P.FEATURE_ADMINS)) continue;
+      conn.ws.send(conn.channel.seal({ type: "admins", add, remove } satisfies P.ServerMessage));
+    }
+  }
+
+  // Whether `url` is this admin: one of its own addresses on its port, or
+  // the address its agents report reaching it at.
+  function isSelf(url: string): boolean {
+    const { hostname, port: urlPort } = new URL(url);
+    const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (Number(urlPort) === port && ["localhost", "127.0.0.1", "::1", ...lanAddresses()].includes(host)) return true;
+    return Object.values(store.data.agents).some((a) => a.state?.admins?.some((l) => l.current && l.url === url));
+  }
+
+  async function addAdmin(address: string): Promise<{ url: string; reachable: boolean }> {
+    let url: string;
+    try {
+      if (!SAFE_ADDRESS.test(address.trim())) throw new Error();
+      url = P.normalizeServerUrl(address);
+    } catch {
+      throw new HttpError(400, `not an address: ${address}; enter an IP address or computer name, such as 192.168.1.80`);
+    }
+    if (isSelf(url)) throw new HttpError(409, `${url} is this computer`);
+    const reachable = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) }).then(
+      (r) => r.ok,
+      () => false,
+    );
+    store.data.admins = [...new Set([...(store.data.admins ?? []), url])];
+    store.data.removedAdmins = (store.data.removedAdmins ?? []).filter((u) => u !== url);
+    log(`added admin computer ${url}${reachable ? "" : " (not reachable now)"}`);
+    pushAdmins([url], []);
+    changed();
+    return { url, reachable };
+  }
+
+  function removeAdmin(url: string): void {
+    store.data.admins = (store.data.admins ?? []).filter((u) => u !== url);
+    store.data.removedAdmins = [...new Set([...(store.data.removedAdmins ?? []), url])].slice(-64);
+    log(`removed admin computer ${url}`);
+    pushAdmins([], [url]);
+    changed();
   }
 
   function settleOnReconnect(job: JobRecord, agentVersion: string): void {
@@ -664,6 +720,26 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       case "POST /api/agents/update": {
         const { agentIds } = z.object({ agentIds: z.array(z.string()).min(1) }).parse(await readJson(req));
         return json(res, 200, await createUpdateJobs(agentIds));
+      }
+      case "POST /api/admins": {
+        const { address } = z.object({ address: z.string().min(1).max(300) }).parse(await readJson(req));
+        return json(res, 200, await addAdmin(address));
+      }
+      case "DELETE /api/admins":
+        removeAdmin(q("url"));
+        return json(res, 200, { ok: true });
+      case "POST /api/team-token": {
+        const { token } = z
+          .object({ token: z.string().trim().regex(/^[A-Za-z0-9_-]{16,128}$/, "a team token is 16 to 128 letters, digits, - and _") })
+          .parse(await readJson(req));
+        if (token === store.data.enrollToken) return json(res, 200, { ok: true });
+        store.data.enrollToken = token;
+        // Connections made with the old token end; agents that have the new
+        // one connect again straight away.
+        for (const conn of conns.values()) conn.ws.close(4005, "team token changed");
+        log("team token changed");
+        changed();
+        return json(res, 200, { ok: true });
       }
       case "POST /api/agents/refresh":
         for (const conn of conns.values()) conn.ws.send(conn.channel.seal({ type: "refresh" } satisfies P.ServerMessage));

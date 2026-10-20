@@ -6,6 +6,7 @@ import { request } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { startAdmins } from "../../agent/src/admins.ts";
 import { startAgent, type AgentStatus, type RunningAgent } from "../../agent/src/agent.ts";
 import { fakeEnv, makeTmp, noProcesses, write, writeCepPanel } from "../../core/test/helpers.ts";
 import { startServer, type RunningServer } from "../src/server.ts";
@@ -417,6 +418,67 @@ test("a .jsx is offered as After Effects or Illustrator script, and the choice s
   const next = await api("POST", "/api/packages/inspect", { path: file });
   assert.equal(next.body.detected.scriptApp, "aftereffects");
   assert.equal(next.body.id, added.body.id);
+});
+
+test("a second admin computer with the team token: agents connect to both, until it is removed", async () => {
+  const other = await startServer({ dataDir: join(root, "admin2"), port: 0, host: "127.0.0.1", log: () => {} });
+  const call = async (srv: RunningServer, method: string, path: string, body?: unknown) => {
+    const res = await fetch(`http://127.0.0.1:${srv.port}${path}`, {
+      method,
+      headers: { "x-zeploy-admin": srv.adminToken, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, body: (await res.json()) as any };
+  };
+  const otherUrl = `http://127.0.0.1:${other.port}`;
+  try {
+    assert.equal((await call(other, "POST", "/api/team-token", { token: "too short" })).status, 400);
+    assert.equal((await call(other, "POST", "/api/team-token", { token: server.store.data.enrollToken })).status, 200);
+    assert.equal(other.store.data.enrollToken, server.store.data.enrollToken);
+
+    let saved: string[] = [];
+    const multi = startAdmins({
+      servers: [`http://127.0.0.1:${server.port}`],
+      token: server.store.data.enrollToken,
+      agentId: "agent-multi-0001",
+      info: { hostname: "MULTI-PC", user: "tester" },
+      detect: async () => fakeEnv(join(root, "multi")),
+      exec: { processes: noProcesses },
+      log: () => {},
+      saveServers: async (list) => void (saved = list),
+    });
+    try {
+      await agentRecord("agent-multi-0001", (a) => a.online && a.features?.includes("admins"));
+      assert.equal((await api("POST", "/api/admins", { address: `127.0.0.1:${server.port}` })).status, 409, "this computer");
+      assert.equal((await api("POST", "/api/admins", { address: "not an address!" })).status, 400);
+
+      const added = await api("POST", "/api/admins", { address: `127.0.0.1:${other.port}` });
+      assert.equal(added.status, 200, JSON.stringify(added.body));
+      assert.deepEqual(added.body, { url: otherUrl, reachable: true });
+
+      await waitFor("agent on the second admin", async () => {
+        const { body } = await call(other, "GET", "/api/state");
+        return body.agents.find((a: any) => a.id === "agent-multi-0001")?.online;
+      });
+      assert.deepEqual(saved, [`http://127.0.0.1:${server.port}`, otherUrl]);
+      const report = await agentRecord("agent-multi-0001", (a) =>
+        a.state?.admins?.some((l: any) => l.url === otherUrl && l.status === "connected"),
+      );
+      assert.ok(report.state.admins.some((l: any) => l.current && l.url === `http://127.0.0.1:${server.port}`));
+      assert.deepEqual((await api("GET", "/api/state")).body.admins, [otherUrl]);
+
+      assert.equal((await api("DELETE", `/api/admins?url=${encodeURIComponent(otherUrl)}`)).status, 200);
+      await waitFor("agent gone from the second admin", async () => {
+        const { body } = await call(other, "GET", "/api/state");
+        return !body.agents.find((a: any) => a.id === "agent-multi-0001")?.online;
+      });
+      assert.deepEqual(saved, [`http://127.0.0.1:${server.port}`]);
+    } finally {
+      await multi.stop();
+    }
+  } finally {
+    await other.close();
+  }
 });
 
 test("a download link only works with its job's token", async () => {

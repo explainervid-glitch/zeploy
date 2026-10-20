@@ -16,6 +16,7 @@
   <header class="topbar">
     <h1 class="brand"><span class="prompt" aria-hidden="true">&gt;_</span> zeploy</h1>
     <span id="online" class="online" aria-live="polite"></span>
+    <button type="button" id="open-settings" class="btn ghost">Settings</button>
     <button type="button" id="connect-pc" class="btn ghost">Connect PC</button>
     <button type="button" id="add-package" class="btn primary">Add package</button>
   </header>
@@ -165,6 +166,48 @@
     </div>
     <div class="sheet-foot">
       <span class="note muted small">Holds the team token. Keep the folder private.</span>
+      <button type="button" class="btn" data-close>Done</button>
+    </div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="sheet" aria-labelledby="settings-title">
+    <div class="sheet-head">
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">
+        <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <h3 class="section-title">Admin computers</h3>
+      <p class="muted small">PCs connect to every admin computer listed here, so the team can install plugins from any of them. Each one runs the zeploy admin app with this team's token (below), and keeps its own packages.</p>
+      <ul id="admin-list" class="admin-list"></ul>
+      <form id="admin-add-form" class="row">
+        <input id="admin-address" class="input code" type="text" spellcheck="false" autocomplete="off" placeholder="192.168.1.80" aria-label="Address of another admin computer">
+        <button type="submit" class="btn">Add</button>
+      </form>
+      <p id="admin-old-agents" class="help" hidden></p>
+      <p id="admin-note" class="ok-text" role="status" hidden></p>
+      <p id="admin-error" class="error" role="alert" hidden></p>
+    </div>
+    <div class="sheet-section">
+      <h3 class="section-title">Team token</h3>
+      <p class="muted small">PCs and admin computers of one team share this token. To make another computer an admin, copy it into Settings on that computer.</p>
+      <div class="row token-row">
+        <code id="token-value" class="token"></code>
+        <button type="button" id="token-show" class="btn xs">Show</button>
+        <button type="button" id="token-copy" class="btn xs">Copy</button>
+      </div>
+      <details id="token-join" class="details">
+        <summary>Use the token of another admin computer</summary>
+        <form id="token-form" class="row">
+          <input id="token-input" class="input code" type="text" spellcheck="false" autocomplete="off" aria-label="Team token of the other admin computer">
+          <button type="submit" class="btn">Use token</button>
+        </form>
+        <p class="help">PCs set up with this computer's current token can no longer connect to it. Do this on a new admin computer, before connecting PCs to it.</p>
+        <p id="token-error" class="error" role="alert" hidden></p>
+      </details>
+    </div>
+    <div class="sheet-foot">
       <button type="button" class="btn" data-close>Done</button>
     </div>
   </dialog>

@@ -15,8 +15,8 @@ import { isSea } from "node:sea";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { isElevated, migrateLegacyDir, run } from "../../core/src/index.ts";
-import { startAgent } from "./agent.ts";
-import { configPath, loadConfig, newAgentId, normalizeServerUrl, saveConfig } from "./config.ts";
+import { startAdmins } from "./admins.ts";
+import { configPath, loadConfig, newAgentId, normalizeServerUrl, saveConfig, serversOf } from "./config.ts";
 import {
   installedExePath,
   LEGACY_TASK_NAME,
@@ -129,18 +129,24 @@ async function cmdRun(values: { server?: string; token?: string; takeover?: stri
   const log = makeLogger();
   if (!takeover) writeFileSync(pidFile, String(process.pid));
 
-  log(`zeploy-agent ${AGENT_VERSION} starting, server ${config.serverUrl}${takeover ? `, taking over from pid ${takeover}` : ""}`);
+  const servers = serversOf(config);
+  log(`zeploy-agent ${AGENT_VERSION} starting, admin ${servers.join(", ")}${takeover ? `, taking over from pid ${takeover}` : ""}`);
   // Only the built exe can replace itself; from source, update with git.
   const updater = isSea() ? exeUpdater({ exe: process.execPath, pidFile }) : undefined;
   if (updater && !takeover) void removeUpdateLeftovers(null);
   let tookOver = !takeover;
-  const agent = startAgent({
-    serverUrl: config.serverUrl,
+  const agent = startAdmins({
+    servers,
     token: config.token,
     agentId: config.agentId!,
     log,
     updater,
-    onStatus: (status) => {
+    // The first admin also goes into serverUrl, which older agents read.
+    saveServers: async (list) => {
+      const current = await loadConfig();
+      await saveConfig({ ...current, serverUrl: list[0], servers: list });
+    },
+    onStatus: (_url, status) => {
       if (status !== "connected" || tookOver) return;
       tookOver = true;
       // The old agent waits for this, then exits.
@@ -228,7 +234,7 @@ async function cmdStatus(): Promise<void> {
   const pid = runningPid();
   console.log(`version  ${AGENT_VERSION}`);
   console.log(`config   ${configPath()}`);
-  console.log(`server   ${config.serverUrl ?? "(not set)"}`);
+  console.log(`admin    ${serversOf(config).join(", ") || "(not set)"}`);
   console.log(`token    ${config.token ? "set" : "(not set)"}`);
   console.log(`agent id ${config.agentId ?? "(not assigned yet)"}`);
   console.log(`running  ${pid ? `yes, pid ${pid}` : "no"}`);

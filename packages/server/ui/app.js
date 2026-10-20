@@ -709,6 +709,7 @@ function render() {
   renderMatrix();
   renderSide();
   if ($("connect-dialog").open) renderRecent();
+  if ($("settings-dialog").open) renderSettings();
   if (focus) document.querySelector(focus)?.focus();
 }
 
@@ -1021,6 +1022,114 @@ function renderSetupCommand() {
   $("server-address").textContent = serverAddress();
 }
 
+// ---- Settings: admin computers and team token -------------------------------------------------
+
+let tokenShown = false;
+const bareUrl = (url) => url.replace(/^https?:\/\//, "");
+
+// Every other admin computer: the ones added here and the ones PCs report
+// (added on another admin), with how many PCs know and reach each.
+function otherAdmins() {
+  const urls = new Set(state.admins);
+  for (const a of state.agents) for (const l of a.state?.admins ?? []) if (!l.current) urls.add(l.url);
+  return [...urls].sort().map((url) => {
+    const links = state.agents.map((a) => a.state?.admins?.find((l) => l.url === url)).filter(Boolean);
+    return {
+      url,
+      addedHere: state.admins.includes(url),
+      known: links.length,
+      connected: links.filter((l) => l.status === "connected").length,
+      rejected: links.filter((l) => l.status === "rejected").length,
+    };
+  });
+}
+
+function renderSettings() {
+  const total = state.agents.length;
+  const self = state.addresses.map((a) => `${a}:${state.port}`).join(", ") || `port ${state.port}`;
+  const online = state.agents.filter((a) => a.online).length;
+  const rows = [
+    `<li class="admin-row"><span class="admin-url code">${esc(self)}</span>` +
+      `<span class="admin-stat">this computer, ${online} of ${pcs(total)} connected</span></li>`,
+    ...otherAdmins().map((o) => {
+      const stat = o.rejected
+        ? `${o.rejected} of ${pcs(o.known)} rejected: that computer uses another team token`
+        : o.known
+          ? `connected on ${o.connected} of ${pcs(o.known)}`
+          : "no PC knows it yet";
+      return (
+        `<li class="admin-row"><span class="admin-url code">${esc(bareUrl(o.url))}</span>` +
+        `<span class="admin-stat${o.rejected ? " err" : ""}">${esc(stat)}${o.addedHere ? "" : ", added on another admin"}</span>` +
+        `<button type="button" class="link-btn" data-remove-admin="${esc(o.url)}" aria-label="Remove ${esc(bareUrl(o.url))}">Remove</button></li>`
+      );
+    }),
+  ];
+  $("admin-list").innerHTML = rows.join("");
+  const old = state.agents.filter((a) => !(a.features ?? []).includes("admins")).length;
+  $("admin-old-agents").hidden = old === 0;
+  $("admin-old-agents").textContent = `${pcs(old)} run${old === 1 ? "s" : ""} an agent older than 0.7.0 and only connect${old === 1 ? "s" : ""} to the computer ${old === 1 ? "it was" : "they were"} set up for. Update their agents first.`;
+  $("token-value").textContent = tokenShown ? state.enrollToken : "•".repeat(24);
+  $("token-show").textContent = tokenShown ? "Hide" : "Show";
+}
+
+function openSettings() {
+  tokenShown = false;
+  for (const id of ["admin-note", "admin-error", "token-error"]) $(id).hidden = true;
+  $("token-join").open = false;
+  $("token-input").value = "";
+  renderSettings();
+  $("settings-dialog").showModal();
+}
+
+async function addAdmin(event) {
+  event.preventDefault();
+  const address = $("admin-address").value.trim();
+  $("admin-note").hidden = $("admin-error").hidden = true;
+  if (!address) return;
+  try {
+    const { url, reachable } = await api("POST", "/api/admins", { address });
+    $("admin-address").value = "";
+    $("admin-note").textContent = reachable
+      ? `Added ${bareUrl(url)}. PCs connect to it as well from now on.`
+      : `Added ${bareUrl(url)}, but it does not answer now. PCs connect once its zeploy admin app runs.`;
+    $("admin-note").hidden = false;
+  } catch (err) {
+    $("admin-error").textContent = err.message;
+    $("admin-error").hidden = false;
+  }
+}
+
+async function removeAdmin(url) {
+  const ok = await askConfirm({
+    title: `Remove ${bareUrl(url)}?`,
+    body: "PCs stop connecting to that admin computer. Its packages and records stay on it, and plugins stay installed.",
+    action: "Remove",
+  });
+  if (ok) await api("DELETE", `/api/admins?url=${encodeURIComponent(url)}`);
+}
+
+async function useToken(event) {
+  event.preventDefault();
+  const token = $("token-input").value.trim();
+  $("token-error").hidden = true;
+  if (!token || token === state.enrollToken) return;
+  const ok = await askConfirm({
+    title: "Use this team token?",
+    body: "This computer joins the team of the admin computer the token comes from. PCs set up with the current token can no longer connect here.",
+    action: "Use token",
+  });
+  if (!ok) return;
+  try {
+    await api("POST", "/api/team-token", { token });
+    $("token-input").value = "";
+    $("token-join").open = false;
+    toast("Team token changed. Save the PC installer again before setting up PCs from here.");
+  } catch (err) {
+    $("token-error").textContent = err.message;
+    $("token-error").hidden = false;
+  }
+}
+
 function openConnect() {
   const select = $("setup-address");
   const current = select.value;
@@ -1119,6 +1228,7 @@ document.addEventListener("click", async (event) => {
     else if (d.open === "add") openAdd();
     else if (d.rename) openRename(d.rename);
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
+    else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
     else if (d.refreshPkg) await refreshPackage(d.refreshPkg);
     else if (d.close !== undefined) el.closest("dialog")?.close();
     else if (d.forget) {
@@ -1157,6 +1267,14 @@ $("tab-activity").addEventListener("click", () => {
   render();
 });
 $("connect-pc").addEventListener("click", () => state && openConnect());
+$("open-settings").addEventListener("click", () => state && openSettings());
+$("admin-add-form").addEventListener("submit", addAdmin);
+$("token-form").addEventListener("submit", useToken);
+$("token-show").addEventListener("click", () => {
+  tokenShown = !tokenShown;
+  renderSettings();
+});
+$("token-copy").addEventListener("click", () => copy(state.enrollToken, "Team token copied."));
 
 // Single-key shortcuts, as in a terminal app (listed in the status bar).
 // Never while typing or while a dialog is open.

@@ -216,7 +216,7 @@ Run these in an administrator PowerShell on the team PC, from
 .\zeploy-agent.exe status
 ```
 
-Shows the server, whether a token is set, the PC id, whether the agent is
+Shows the version, the admin computers, whether a token is set, the PC id, whether the agent is
 running, and the log path.
 
 ```bash
@@ -564,6 +564,33 @@ when the agent reconnects. From then on the PC updates from the admin app.
 Delete the installer from the shared folder afterwards: it holds the team
 token.
 
+### Several admin computers
+
+The team can run the zeploy admin app on more than one PC, for instance
+192.168.1.72 and 192.168.1.80. Every PC then connects to both, and either
+one can install, update and remove plugins. Each admin computer keeps its own
+packages, jobs and PC names; the PCs and what is installed on them are the
+same everywhere.
+
+1. On the new admin computer, start the zeploy admin app and open
+   **Settings** (top bar).
+2. On the first admin computer, open **Settings** and copy the team token.
+3. On the new one, under **Use the token of another admin computer**, paste
+   it and click **Use token**. Both now share the team token.
+4. On the first admin computer, under **Admin computers**, enter the new
+   one's address (`192.168.1.80`, or `192.168.1.80:7420`) and click **Add**.
+
+PCs with agent 0.7.0 or later connect to the new admin within seconds, and
+remember it after a restart. **Settings** shows, for each admin computer, on
+how many PCs it is connected. "Rejected" means that computer uses another
+team token: repeat step 3. Older agents only connect to the computer they
+were set up for; update them first. **Remove** makes the PCs stop connecting
+to an admin computer; plugins stay installed.
+
+Only addresses travel to the PCs, never the token: every admin of the team
+proves the same token, so a computer without it cannot command the PCs.
+Open the firewall on each admin computer as in step 1 of this guide.
+
 ### Other actions
 
 - **Activity** lists every job. Click one to see its log.
@@ -817,7 +844,8 @@ Done:
   one-click installer, PC renaming.
 - **Phase 3, started:** agent self-update from the admin app (0.3.0);
   plugins found on PCs without zeploy, and updating a package from its
-  folder (0.4.0).
+  folder (0.4.0); partial Blender installs (0.5.0); Illustrator (0.6.0);
+  several admin computers (0.7.0).
 
 Planned for phase 3:
 

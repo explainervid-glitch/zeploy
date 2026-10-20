@@ -531,6 +531,19 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .sheet-foot .note { margin-right: auto; }
 .confirm-body { white-space: pre-line; }
 
+/* Settings */
+.section-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.admin-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); }
+.admin-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px dashed var(--line); font-size: 12px; }
+.admin-row:last-child { border-bottom: 0; }
+.admin-url { font-weight: 700; }
+.admin-stat { flex: 1 1 160px; min-width: 0; color: var(--muted); }
+.admin-stat.err { color: var(--err); }
+.token-row { align-items: center; }
+.token { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); background: var(--sunken); font-size: 12px; overflow-wrap: anywhere; }
+.details form { margin-top: 10px; }
+.details .help { margin-top: 8px; }
+
 .row { display: flex; gap: 6px; }
 .input {
   flex: 1;

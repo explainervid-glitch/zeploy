@@ -42,6 +42,8 @@ export interface AgentOptions {
   exclusive?: <T>(run: () => Promise<T>) => Promise<T>;
   admins?: () => P.AdminLink[];
   onAdmins?: (change: { add: string[]; remove: string[] }) => void;
+  // Plugin usage (usage.ts): an admin stored the batch with this id.
+  onUsageAck?: (id: string) => void;
   // Test seams.
   detect?: () => Promise<Environment>;
   exec?: Pick<ExecuteOptions, "processes" | "kill">;
@@ -55,6 +57,10 @@ export interface RunningAgent {
   idle(): Promise<void>;
   // Sends the admin what is installed (and how the other connections are).
   report(): void;
+  // Whether this admin wants plugin usage: null until it says.
+  readonly wantsUsage: boolean | null;
+  // Sends a usage batch if connected to an admin that wants it.
+  sendUsage(id: string, rows: P.UsageRow[]): boolean;
 }
 
 const SILENCE_LIMIT_MS = 75_000;
@@ -69,13 +75,18 @@ export function startAgent(options: AgentOptions): RunningAgent {
     hostname: hostname(),
     user: userInfo().username,
     agentVersion: AGENT_VERSION,
-    features: [...(options.updater ? [P.FEATURE_SELF_UPDATE] : []), ...(options.onAdmins ? [P.FEATURE_ADMINS] : [])],
+    features: [
+      ...(options.updater ? [P.FEATURE_SELF_UPDATE] : []),
+      ...(options.onAdmins ? [P.FEATURE_ADMINS] : []),
+      ...(options.onUsageAck ? [P.FEATURE_USAGE] : []),
+    ],
     ...options.info,
   };
 
   let stopped = false;
   let socket: WebSocket | null = null;
   let channel: P.SecureChannel | null = null;
+  let wantsUsage: boolean | null = null;
   let backoff = 1000;
   let retryTimer: NodeJS.Timeout | null = null;
   let jobs: Promise<void> = Promise.resolve();
@@ -231,6 +242,12 @@ export function startAgent(options: AgentOptions): RunningAgent {
       case "admins":
         options.onAdmins?.({ add: message.add, remove: message.remove });
         return;
+      case "settings":
+        wantsUsage = message.usage;
+        return;
+      case "usageAck":
+        options.onUsageAck?.(message.id);
+        return;
     }
   }
 
@@ -288,6 +305,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
 
     ws.addEventListener("close", (event) => {
       clearInterval(watchdog);
+      wantsUsage = null;
       if (socket === ws) {
         socket = null;
         channel = null;
@@ -318,6 +336,14 @@ export function startAgent(options: AgentOptions): RunningAgent {
     idle: () => jobs,
     report() {
       if (channel) void sendState();
+    },
+    get wantsUsage() {
+      return channel ? wantsUsage : null;
+    },
+    sendUsage(id, rows) {
+      if (!channel || wantsUsage !== true) return false;
+      send({ type: "usage", id, rows });
+      return true;
     },
     async stop() {
       stopped = true;

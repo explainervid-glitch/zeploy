@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { startAdmins } from "../../agent/src/admins.ts";
@@ -478,6 +478,49 @@ test("a second admin computer with the team token: agents connect to both, until
     }
   } finally {
     await other.close();
+  }
+});
+
+test("plugin usage goes from the spool to the admin's totals, and stops when switched off", async () => {
+  const usageDir = join(root, "usage-pc", "usage");
+  const event = (fields: Record<string, unknown>) =>
+    JSON.stringify({ v: 1, t: new Date().toISOString(), plugin: "com.colosave.panel", ver: "1.0.0", app: "aftereffects", ...fields });
+  await write(
+    join(usageDir, "com.colosave.panel.jsonl"),
+    [event({ ev: "open" }), event({ ev: "action", name: "export", ms: 200 }), event({ ev: "action", name: "export", ms: 100 })].join("\n") + "\n",
+  );
+  const pc = startAdmins({
+    servers: [`http://127.0.0.1:${server.port}`],
+    token: server.store.data.enrollToken,
+    agentId: "agent-usage-0001",
+    info: { hostname: "USAGE-PC", user: "tester" },
+    detect: async () => fakeEnv(join(root, "usage-pc")),
+    exec: { processes: noProcesses },
+    log: () => {},
+    usageDir,
+    usageIntervalMs: 100,
+  });
+  try {
+    const plugin = await waitFor("usage at the admin", async () => {
+      const { body } = await api("GET", "/api/usage?days=7");
+      return body.plugins.find((p: any) => p.plugin === "com.colosave.panel");
+    });
+    assert.equal(plugin.opens, 1);
+    assert.equal(plugin.uses, 2);
+    assert.deepEqual(plugin.actions, { export: { n: 2, ms: 300 } });
+    assert.deepEqual(plugin.agents["agent-usage-0001"], { opens: 1, uses: 2, last: plugin.last });
+    await waitFor("spool deleted", async () => (await readdir(usageDir)).length === 0);
+    assert.equal((await api("GET", "/api/state")).body.usageEnabled, true);
+
+    // Off: the PC deletes what plugins write and the totals stay as they were.
+    assert.deepEqual((await api("POST", "/api/settings", { usage: false })).body, { usage: false });
+    await write(join(usageDir, "com.colosave.panel.jsonl"), event({ ev: "open" }) + "\n");
+    await waitFor("spool cleared", async () => (await readdir(usageDir)).length === 0);
+    const after = (await api("GET", "/api/usage?days=7")).body.plugins.find((p: any) => p.plugin === "com.colosave.panel");
+    assert.equal(after.opens, 1);
+  } finally {
+    await api("POST", "/api/settings", { usage: true });
+    await pc.stop();
   }
 });
 

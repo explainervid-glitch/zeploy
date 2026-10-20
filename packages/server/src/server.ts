@@ -31,6 +31,7 @@ import {
   backfillKeys,
 } from "./packages.ts";
 import { AGENT_PACKAGE_ID, MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
+import { UsageStore } from "./usage.ts";
 
 export interface ServerOptions {
   dataDir: string;
@@ -142,6 +143,10 @@ const jobRequestSchema = z.object({
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
   const log = options.log ?? ((line: string) => console.log(`${new Date().toISOString()} ${line}`));
   const store = await Store.open(options.dataDir);
+  const usage = await UsageStore.open(options.dataDir);
+  const usageOn = () => store.data.usage !== false;
+  // Usage batches already stored, per agent, so one sent again is not counted twice.
+  const usageSeen = new Map<string, string[]>();
   const adminToken = P.randomToken();
   const conns = new Map<string, Conn>();
   const downloads = new Map<string, { token: string; file: string; type: string }>();
@@ -173,6 +178,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       addresses: lanAddresses(),
       installerReady: !!options.agentExe && existsSync(options.agentExe),
       admins: store.data.admins ?? [],
+      usageEnabled: usageOn(),
       // The agent version PCs can update to; null until the exe is hashed.
       agentBuild: agentBuild ? { version: agentBuild.version } : null,
       agents: Object.values(store.data.agents).map((a) => ({
@@ -329,6 +335,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     changed();
     const add = store.data.admins ?? [];
     const remove = store.data.removedAdmins ?? [];
+    if (info.features?.includes(P.FEATURE_USAGE)) {
+      conn.ws.send(conn.channel.seal({ type: "settings", usage: usageOn() } satisfies P.ServerMessage));
+    }
     if (info.features?.includes(P.FEATURE_ADMINS) && (add.length || remove.length)) {
       conn.ws.send(conn.channel.seal({ type: "admins", add, remove } satisfies P.ServerMessage));
     }
@@ -415,6 +424,13 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       case "state":
         if (agent) agent.state = msg.state;
         break;
+      case "usage": {
+        const seen = usageSeen.get(conn.agentId) ?? [];
+        if (usageOn() && !seen.includes(msg.id)) usage.add(conn.agentId, msg.rows);
+        usageSeen.set(conn.agentId, [...seen, msg.id].slice(-20));
+        conn.ws.send(conn.channel.seal({ type: "usageAck", id: msg.id } satisfies P.ServerMessage));
+        return;
+      }
       case "jobStarted":
         job!.status = "running";
         job!.startedAt = new Date().toISOString();
@@ -728,6 +744,23 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       case "DELETE /api/admins":
         removeAdmin(q("url"));
         return json(res, 200, { ok: true });
+      case "GET /api/usage": {
+        const days = Math.min(Math.max(Number(q("days")) || 30, 1), 180);
+        return json(res, 200, { days, plugins: usage.summary(days) });
+      }
+      case "POST /api/settings": {
+        const body = z.object({ usage: z.boolean() }).parse(await readJson(req));
+        if (body.usage !== usageOn()) {
+          store.data.usage = body.usage;
+          log(`plugin usage ${body.usage ? "on" : "off"}`);
+          for (const conn of conns.values()) {
+            if (!store.data.agents[conn.agentId]?.features?.includes(P.FEATURE_USAGE)) continue;
+            conn.ws.send(conn.channel.seal({ type: "settings", usage: body.usage } satisfies P.ServerMessage));
+          }
+          changed();
+        }
+        return json(res, 200, { usage: usageOn() });
+      }
       case "POST /api/team-token": {
         const { token } = z
           .object({ token: z.string().trim().regex(/^[A-Za-z0-9_-]{16,128}$/, "a team token is 16 to 128 letters, digits, - and _") })
@@ -851,6 +884,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       for (const timer of restartTimers.values()) clearTimeout(timer);
       if (stateTimer) clearTimeout(stateTimer);
       await store.flush();
+      await usage.flush();
     },
   };
 }

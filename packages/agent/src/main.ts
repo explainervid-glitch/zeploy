@@ -141,6 +141,8 @@ async function cmdRun(values: { server?: string; token?: string; takeover?: stri
     agentId: config.agentId!,
     log,
     updater,
+    // Plugins write their usage under %LOCALAPPDATA%\zeploy\usage.
+    usageDir: join(stateDir, "usage"),
     // The first admin also goes into serverUrl, which older agents read.
     saveServers: async (list) => {
       const current = await loadConfig();

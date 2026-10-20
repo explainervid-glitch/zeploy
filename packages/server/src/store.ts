@@ -78,6 +78,8 @@ export interface StoreData {
   // offline then drop them when they connect.
   admins?: string[];
   removedAdmins?: string[];
+  // Whether agents report plugin usage to this admin; absent means yes.
+  usage?: boolean;
   packages: PackageRecord[];
   agents: Record<string, AgentRecord>;
   jobs: JobRecord[];

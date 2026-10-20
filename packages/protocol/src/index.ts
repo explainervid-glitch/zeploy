@@ -47,6 +47,8 @@ export const challengeSchema = z.object({
 export const FEATURE_SELF_UPDATE = "self-update";
 // Connects to several admin computers and takes "admins" messages (0.7.0).
 export const FEATURE_ADMINS = "admins";
+// Reports plugin usage and takes "settings" and "usageAck" messages (0.8.0).
+export const FEATURE_USAGE = "usage";
 
 export const agentInfoSchema = z.object({
   hostname: z.string().max(256),
@@ -183,7 +185,35 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
     add: z.array(z.string().max(300)).max(16),
     remove: z.array(z.string().max(300)).max(64),
   }),
+  // Sent when an agent with FEATURE_USAGE connects and when it changes:
+  // whether this admin wants plugin usage reports.
+  z.object({ type: z.literal("settings"), usage: z.boolean() }),
+  // The usage batch with this id is stored; the agent may delete it.
+  z.object({ type: z.literal("usageAck"), id: z.string().max(64) }),
 ]);
+
+// Plugin usage, counted on the PC from the lines plugins append to
+// %LOCALAPPDATA%\zeploy\usage\<plugin>.jsonl (see docs/plugin-usage.md) and
+// sent as one row per day and plugin. No user names, file names or messages:
+// only the plugin's own id, version, app, and short event names.
+const usageName = z.string().regex(/^[A-Za-z0-9._ -]{1,40}$/);
+export const usageRowSchema = z.object({
+  // The PC's local date of the events: "2026-10-20".
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // The plugin's own id: CEP bundle id, Blender module or extension id, or
+  // script file name ("com.colosave.panel", "remaper", "Aegroup.jsx").
+  plugin: z.string().min(1).max(120),
+  app: z.string().max(40).optional(),
+  opens: z.number().int().nonnegative(),
+  // Features used, by name: how often, and their total duration in ms.
+  actions: z.record(usageName, z.object({ n: z.number().int().nonnegative(), ms: z.number().nonnegative() })),
+  errors: z.record(usageName, z.number().int().nonnegative()),
+  // Events per plugin version.
+  versions: z.record(z.string().max(32), z.number().int().nonnegative()),
+  // The latest event of the day, ISO time.
+  last: z.string().max(40),
+});
+export type UsageRow = z.infer<typeof usageRowSchema>;
 
 // "192.168.1.10", "192.168.1.10:7420" and "http://192.168.1.10:7420/" all
 // become "http://192.168.1.10:7420".
@@ -230,6 +260,8 @@ export const agentStateSchema = z.object({
 export const agentMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("state"), state: agentStateSchema }),
   z.object({ type: z.literal("jobStarted"), jobId: z.string() }),
+  // Plugin usage since the last batch; answered with usageAck. From agent 0.8.0.
+  z.object({ type: z.literal("usage"), id: z.string().max(64), rows: z.array(usageRowSchema).max(500) }),
   z.object({ type: z.literal("jobLog"), jobId: z.string(), line: z.string().max(4000) }),
   z.object({
     type: z.literal("jobDone"),

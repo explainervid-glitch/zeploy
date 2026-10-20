@@ -6,15 +6,25 @@
 // message, and the agent saves the list, so it reconnects to all of them
 // after a restart.
 
+import { randomUUID } from "node:crypto";
 import * as P from "../../protocol/src/index.ts";
 import { startAgent, type AgentOptions, type AgentStatus, type RunningAgent } from "./agent.ts";
+import { clearSpool, dropSpool, takeSpool } from "./usage.ts";
 
-export interface AdminsOptions extends Omit<AgentOptions, "serverUrl" | "onStatus" | "exclusive" | "admins" | "onAdmins"> {
+export interface AdminsOptions
+  extends Omit<AgentOptions, "serverUrl" | "onStatus" | "exclusive" | "admins" | "onAdmins" | "onUsageAck"> {
   servers: string[];
   // Saves the list after an admin added or removed one.
   saveServers?: (servers: string[]) => Promise<void>;
   onStatus?: (url: string, status: AgentStatus) => void;
+  // Where plugins write their usage (usage.ts). Without it, none is reported.
+  usageDir?: string;
+  usageIntervalMs?: number;
 }
+
+const USAGE_INTERVAL_MS = 60_000;
+// A batch no admin confirmed in this time is sent again in the next round.
+const USAGE_ACK_MS = 2 * 60_000;
 
 export interface RunningAdmins {
   readonly servers: string[];
@@ -29,7 +39,7 @@ interface Link {
 }
 
 export function startAdmins(options: AdminsOptions): RunningAdmins {
-  const { servers, saveServers, onStatus, ...agentOptions } = options;
+  const { servers, saveServers, onStatus, usageDir, usageIntervalMs, ...agentOptions } = options;
   const log = options.log ?? ((line: string) => console.log(line));
   const links = new Map<string, Link>();
 
@@ -58,6 +68,7 @@ export function startAdmins(options: AdminsOptions): RunningAdmins {
       exclusive,
       admins: () => [...links].map(([u, l]) => ({ url: u, status: l.status, ...(u === url ? { current: true } : {}) })),
       onAdmins: (change) => void apply(change),
+      onUsageAck: usageDir ? (id) => void acked(id) : undefined,
       onStatus: (status) => {
         const before = link.status;
         link.status = status;
@@ -100,6 +111,47 @@ export function startAdmins(options: AdminsOptions): RunningAdmins {
     return applying;
   }
 
+  // ---- plugin usage: every admin that wants it gets each batch; the first
+  // to confirm it lets the agent delete the files. An admin that is off at
+  // that time misses the batch.
+  let pending: { id: string; files: string[]; at: number } | null = null;
+  let ticking = false;
+
+  async function acked(id: string): Promise<void> {
+    if (pending?.id !== id) return;
+    const { files } = pending;
+    pending = null;
+    await dropSpool(files);
+  }
+
+  async function usageRound(): Promise<void> {
+    if (!usageDir || ticking) return;
+    ticking = true;
+    try {
+      if (pending && Date.now() - pending.at < USAGE_ACK_MS) return;
+      pending = null;
+      const connected = [...links.values()].filter((l) => l.agent.wantsUsage !== null);
+      const wanting = connected.filter((l) => l.agent.wantsUsage);
+      if (wanting.length === 0) {
+        // Every admin that answered switched usage off: nothing is kept.
+        if (connected.length > 0) await clearSpool(usageDir);
+        return;
+      }
+      const spool = await takeSpool(usageDir);
+      if (spool.rows.length === 0) {
+        await dropSpool(spool.files);
+        return;
+      }
+      const batch = { id: randomUUID(), files: spool.files, at: Date.now() };
+      if (wanting.map((l) => l.agent.sendUsage(batch.id, spool.rows)).some(Boolean)) pending = batch;
+    } catch (err) {
+      log(`could not report plugin usage: ${(err as Error).message}`);
+    } finally {
+      ticking = false;
+    }
+  }
+  const usageTimer = usageDir ? setInterval(() => void usageRound(), usageIntervalMs ?? USAGE_INTERVAL_MS) : null;
+
   for (const url of new Set(servers.map(P.normalizeServerUrl))) open(url);
 
   return {
@@ -113,6 +165,7 @@ export function startAdmins(options: AdminsOptions): RunningAdmins {
       await chain;
     },
     async stop() {
+      if (usageTimer) clearInterval(usageTimer);
       await applying;
       await Promise.all([...links.values()].map((l) => l.agent.stop()));
     },

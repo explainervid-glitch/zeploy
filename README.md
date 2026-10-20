@@ -564,6 +564,29 @@ when the agent reconnects. From then on the PC updates from the admin app.
 Delete the installer from the shared folder afterwards: it holds the team
 token.
 
+### See which plugins are used
+
+**Usage** (top bar, or `u`) ranks the plugins by how many PCs use them, over
+the last 7, 30 or 90 days: used on how many of the PCs that have it, uses,
+opens, errors and when it was last used. Click a plugin for its features
+(with their average duration), uses per role, the PCs using it most, and its
+versions.
+
+Plugins report this themselves, so each plugin needs a small helper: copy it
+from `examples/usage/` and call it where its features run. The contract is in
+[docs/plugin-usage.md](docs/plugin-usage.md), and
+[docs/plugin-usage-prompt.md](docs/plugin-usage-prompt.md) is a ready prompt
+for adding it in a plugin's own project. PCs need agent 0.8.0.
+
+What is stored: daily totals per plugin and PC, kept 180 days in
+`usage.json` beside the admin app's data. No user names, times of day, file
+names or project names. **Settings → Plugin usage** switches it off for the
+whole team; PCs then delete what plugins wrote. Tell the team either way.
+
+With several admin computers, every admin that is connected when a PC sends
+its totals (every minute) gets them; one that is off at that moment misses
+them.
+
 ### Several admin computers
 
 The team can run the zeploy admin app on more than one PC, for instance
@@ -771,7 +794,8 @@ zeploy list                            # packages installed by zeploy on this PC
 | `packages/admin` | Electron shell around the admin server |
 | `packages/agent` | Agent; runs jobs through `packages/core` |
 | `scripts/build.mjs` | Builds the agent exe and the admin app |
-| `docs/` | Workflow diagram (source JSON and rendered HTML) |
+| `docs/` | Workflow diagram, the plugin usage contract and its prompt |
+| `examples/usage/` | Usage helpers for plugins: CEP, ExtendScript, JSFL, Blender |
 | `zeploy.cmd` | Runs the `zeploy` command line from this folder |
 
 Node runs the TypeScript sources directly; only the admin app and the agent
@@ -845,7 +869,7 @@ Done:
 - **Phase 3, started:** agent self-update from the admin app (0.3.0);
   plugins found on PCs without zeploy, and updating a package from its
   folder (0.4.0); partial Blender installs (0.5.0); Illustrator (0.6.0);
-  several admin computers (0.7.0).
+  several admin computers (0.7.0); plugin usage (0.8.0).
 
 Planned for phase 3:
 

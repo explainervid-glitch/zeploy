@@ -531,6 +531,26 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .sheet-foot .note { margin-right: auto; }
 .confirm-body { white-space: pre-line; }
 
+/* Usage */
+dialog.sheet.wide { width: min(880px, calc(100vw - 32px)); }
+.usage-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.usage-bar .muted { margin-left: auto; }
+table.usage { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid var(--line2); }
+table.usage th { padding: 6px 10px; text-align: left; font-size: 11px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line2); background: var(--raised); }
+table.usage td { padding: 6px 10px; border-bottom: 1px dashed var(--line); white-space: nowrap; }
+table.usage td.rank { width: 32px; color: var(--muted); }
+table.usage td.err { color: var(--err); }
+.usage-row td:nth-child(2) { border-left: 3px solid var(--label); width: 100%; white-space: normal; }
+.usage-name { border: 0; background: none; padding: 0; font-weight: 700; text-align: left; }
+.usage-name:hover { color: var(--accent); }
+.usage-name::before { content: "▸ "; color: var(--muted); }
+.usage-row.open .usage-name::before { content: "▾ "; }
+.usage-more > td { padding: 10px 12px 14px 44px; background: var(--sunken); white-space: normal; }
+.usage-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.usage-col h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.usage-col ul { list-style: none; margin: 0; padding: 0; }
+.usage-col li { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+
 /* Settings */
 .section-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .admin-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); }

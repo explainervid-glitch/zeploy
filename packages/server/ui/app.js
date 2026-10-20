@@ -710,6 +710,7 @@ function render() {
   renderSide();
   if ($("connect-dialog").open) renderRecent();
   if ($("settings-dialog").open) renderSettings();
+  if ($("usage-dialog").open) renderUsage();
   if (focus) document.querySelector(focus)?.focus();
 }
 
@@ -1070,6 +1071,170 @@ function renderSettings() {
   $("admin-old-agents").textContent = `${pcs(old)} run${old === 1 ? "s" : ""} an agent older than 0.7.0 and only connect${old === 1 ? "s" : ""} to the computer ${old === 1 ? "it was" : "they were"} set up for. Update their agents first.`;
   $("token-value").textContent = tokenShown ? state.enrollToken : "•".repeat(24);
   $("token-show").textContent = tokenShown ? "Hide" : "Show";
+  $("usage-enabled").checked = state.usageEnabled;
+}
+
+// ---- Plugin usage --------------------------------------------------------------------------------
+// Which plugins the team uses: from the daily totals PCs send (agent 0.8.0)
+// for plugins that include the zeploy usage helper (docs/plugin-usage.md).
+
+const USAGE_PERIODS = [7, 30, 90];
+let usageDays = Number(remember.get("usageDays")) || 30;
+let usageData = null;
+let usageOpen = null; // the row whose details are shown
+let usageTimer = null;
+
+// The package a plugin id belongs to: its id, or one of its plugin
+// identities ("cep:com.colosave.panel" for "com.colosave.panel").
+function packageForPlugin(id) {
+  const low = id.toLowerCase();
+  return latestPackages().find((p) => p.id === low || [...packageKeys(p)].some((k) => k.slice(k.indexOf(":") + 1) === low)) ?? null;
+}
+
+function installedOn(pkg) {
+  return state.agents.filter((a) => a.state?.receipts.some((r) => r.id === pkg.id) || foundOn(a, pkg)).length;
+}
+
+// One row per package (or per plugin id zeploy has no package for).
+function usageRows() {
+  const rows = new Map();
+  for (const u of usageData?.plugins ?? []) {
+    const pkg = packageForPlugin(u.plugin);
+    const key = pkg ? `pkg:${pkg.id}` : `id:${u.plugin.toLowerCase()}`;
+    let r = rows.get(key);
+    if (!r) {
+      r = { key, pkg, name: pkg?.name ?? u.plugin, ids: [], opens: 0, uses: 0, errors: 0, last: "", actions: {}, versions: {}, agents: {} };
+      rows.set(key, r);
+    }
+    r.ids.push(u.plugin);
+    r.opens += u.opens;
+    r.uses += u.uses;
+    r.errors += u.errors;
+    if (u.last > r.last) r.last = u.last;
+    for (const [n, a] of Object.entries(u.actions)) {
+      const t = (r.actions[n] ??= { n: 0, ms: 0 });
+      t.n += a.n;
+      t.ms += a.ms;
+    }
+    for (const [v, n] of Object.entries(u.versions)) r.versions[v] = (r.versions[v] ?? 0) + n;
+    for (const [id, a] of Object.entries(u.agents)) {
+      const t = (r.agents[id] ??= { opens: 0, uses: 0, last: "" });
+      t.opens += a.opens;
+      t.uses += a.uses;
+      if (a.last > t.last) t.last = a.last;
+    }
+  }
+  for (const r of rows.values()) {
+    // A plugin that reports features is used when they are; one that only
+    // reports opening, when it is opened.
+    r.byUses = r.uses > 0;
+    r.count = r.byUses ? r.uses : r.opens;
+    r.usedOn = Object.values(r.agents).filter((a) => (r.byUses ? a.uses : a.opens) > 0).length;
+    r.installed = r.pkg ? installedOn(r.pkg) : null;
+  }
+  return [...rows.values()].sort((a, b) => b.usedOn - a.usedOn || b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function usageDetails(r) {
+  const agents = new Map(state.agents.map((a) => [a.id, a]));
+  const actions = Object.entries(r.actions).sort((a, b) => b[1].n - a[1].n).slice(0, 10);
+  const byRole = new Map();
+  const pcsRows = Object.entries(r.agents)
+    .map(([id, a]) => ({ agent: agents.get(id), ...a }))
+    .sort((a, b) => b.uses - a.uses || b.opens - a.opens);
+  for (const p of pcsRows) {
+    const role = p.agent?.role || "No role";
+    const t = byRole.get(role) ?? { pcs: 0, n: 0 };
+    t.pcs++;
+    t.n += r.byUses ? p.uses : p.opens;
+    byRole.set(role, t);
+  }
+  const versions = Object.entries(r.versions).sort((a, b) => compareSemver(b[0], a[0]));
+  const list = (title, items) =>
+    `<div class="usage-col"><h4>${title}</h4>${items.length ? `<ul>${items.join("")}</ul>` : `<p class="muted small">None reported.</p>`}</div>`;
+  return (
+    `<div class="usage-details">` +
+    list(
+      "Features",
+      actions.map(
+        ([name, a]) =>
+          `<li><span>${esc(name)}</span><span>${a.n}${a.ms ? ` <span class="muted">· ${Math.round(a.ms / a.n)} ms</span>` : ""}</span></li>`,
+      ),
+    ) +
+    list("Roles", [...byRole].sort((a, b) => b[1].n - a[1].n).map(([role, t]) => `<li><span>${esc(role)}</span><span>${t.n} <span class="muted">· ${pcs(t.pcs)}</span></span></li>`)) +
+    list(
+      "PCs",
+      pcsRows.slice(0, 12).map(
+        (p) =>
+          `<li><span>${esc(p.agent ? nameOf(p.agent) : "Forgotten PC")}</span><span>${r.byUses ? p.uses : p.opens} <span class="muted">· ${relTime(p.last)}</span></span></li>`,
+      ),
+    ) +
+    list("Versions", versions.map(([v, n]) => `<li><span class="code">${esc(v)}</span><span>${n}</span></li>`)) +
+    `</div>`
+  );
+}
+
+function renderUsage() {
+  $("usage-period").innerHTML = USAGE_PERIODS.map(
+    (d) => `<button type="button" class="filter" data-usage-days="${d}" aria-pressed="${usageDays === d}">${d} days</button>`,
+  ).join("");
+  const el = $("usage-table");
+  if (!state.usageEnabled) {
+    $("usage-note").textContent = "";
+    el.innerHTML = `<p class="empty-line">Usage reporting is off. Switch it on under Settings.</p>`;
+    return;
+  }
+  if (!usageData) {
+    el.innerHTML = `<p class="empty-line">Loading…</p>`;
+    return;
+  }
+  const rows = usageRows();
+  const reporting = state.agents.filter((a) => (a.features ?? []).includes("usage")).length;
+  $("usage-note").textContent = `${pcs(reporting)} of ${state.agents.length} can report (agent 0.8.0)`;
+  if (!rows.length) {
+    el.innerHTML =
+      `<p class="empty-line">No usage in the last ${usageDays} days. Plugins report once they include the zeploy usage helper ` +
+      `(docs/plugin-usage.md), on PCs with agent 0.8.0.</p>`;
+    return;
+  }
+  el.innerHTML =
+    `<table class="usage"><thead><tr><th>#</th><th>Plugin</th><th>Used on</th><th>Uses</th><th>Opens</th><th>Errors</th><th>Last used</th></tr></thead><tbody>` +
+    rows
+      .map((r, i) => {
+        // "of N" only when zeploy knows where it is installed (by hand on more PCs is possible).
+        const on = r.installed && r.installed >= r.usedOn ? `${r.usedOn} of ${pcs(r.installed)}` : pcs(r.usedOn);
+        const open = usageOpen === r.key;
+        return (
+          `<tr class="usage-row${open ? " open" : ""}" style="--label:${r.pkg ? labelFor(r.pkg.id) : "var(--line2)"}">` +
+          `<td class="rank">${i + 1}</td>` +
+          `<td><button type="button" class="usage-name" data-usage-row="${esc(r.key)}" aria-expanded="${open}">${esc(r.name)}</button>` +
+          (r.pkg ? "" : ` <span class="muted small" title="${esc(r.ids.join(", "))}">not in zeploy</span>`) +
+          `</td><td>${on}</td><td>${r.byUses ? r.uses : "–"}</td><td>${r.opens}</td>` +
+          `<td class="${r.errors ? "err" : ""}">${r.errors}</td><td>${relTime(r.last)}</td></tr>` +
+          (open ? `<tr class="usage-more"><td colspan="7">${usageDetails(r)}</td></tr>` : "")
+        );
+      })
+      .join("") +
+    `</tbody></table>`;
+}
+
+async function loadUsage() {
+  try {
+    usageData = await api("GET", `/api/usage?days=${usageDays}`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+  if ($("usage-dialog").open) renderUsage();
+}
+
+function openUsage() {
+  usageData = null;
+  usageOpen = null;
+  renderUsage();
+  $("usage-dialog").showModal();
+  void loadUsage();
+  clearInterval(usageTimer);
+  usageTimer = setInterval(() => ($("usage-dialog").open ? void loadUsage() : clearInterval(usageTimer)), 30_000);
 }
 
 function openSettings() {
@@ -1229,6 +1394,16 @@ document.addEventListener("click", async (event) => {
     else if (d.rename) openRename(d.rename);
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
     else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
+    else if (d.usageDays) {
+      usageDays = Number(d.usageDays);
+      remember.set("usageDays", String(usageDays));
+      usageData = null;
+      renderUsage();
+      await loadUsage();
+    } else if (d.usageRow) {
+      usageOpen = usageOpen === d.usageRow ? null : d.usageRow;
+      renderUsage();
+    }
     else if (d.refreshPkg) await refreshPackage(d.refreshPkg);
     else if (d.close !== undefined) el.closest("dialog")?.close();
     else if (d.forget) {
@@ -1268,6 +1443,26 @@ $("tab-activity").addEventListener("click", () => {
 });
 $("connect-pc").addEventListener("click", () => state && openConnect());
 $("open-settings").addEventListener("click", () => state && openSettings());
+$("open-usage").addEventListener("click", () => state && openUsage());
+$("usage-enabled").addEventListener("change", async () => {
+  const usage = $("usage-enabled").checked;
+  if (!usage) {
+    const ok = await askConfirm({
+      title: "Switch plugin usage off?",
+      body: "PCs stop reporting and delete what plugins wrote. Usage already collected stays.",
+      action: "Switch off",
+    });
+    if (!ok) {
+      $("usage-enabled").checked = true;
+      return;
+    }
+  }
+  try {
+    await api("POST", "/api/settings", { usage });
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
 $("admin-add-form").addEventListener("submit", addAdmin);
 $("token-form").addEventListener("submit", useToken);
 $("token-show").addEventListener("click", () => {
@@ -1292,6 +1487,7 @@ document.addEventListener("keydown", (event) => {
     1: showTab("changes"),
     2: showTab("activity"),
     s: () => setSideCollapsed(!sideCollapsed),
+    u: () => state && openUsage(),
   }[event.key];
   if (!act) return;
   event.preventDefault();

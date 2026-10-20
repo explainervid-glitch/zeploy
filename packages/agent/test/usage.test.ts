@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -232,4 +232,44 @@ test("the CEP helper finds Node under cep_node, as in a panel with --enable-node
 test("the test panel carries the CEP helper as it is", async () => {
   const panel = join(helpers, "..", "test-panel", "panel", "zeploy-usage.js");
   assert.equal(await readFile(panel, "utf8"), await readFile(join(helpers, "zeploy-usage.js"), "utf8"));
+});
+
+test("the CEP helper without Node writes through cep.fs, as AudiMate does", async () => {
+  const base = await makeTmp();
+  mkdirSync(join(base, "Local", "zeploy"), { recursive: true });
+  // Just enough of cep.fs and CSInterface: results are { err, data }, 0 is NO_ERROR.
+  const result = (fn: () => unknown) => {
+    try {
+      return { err: 0, data: fn() };
+    } catch {
+      return { err: 3 };
+    }
+  };
+  const fsLike = {
+    readdir: (p: string) => result(() => readdirSync(p)),
+    makedir: (p: string) => result(() => mkdirSync(p)),
+    readFile: (p: string) => result(() => readFileSync(p, "utf8")),
+    writeFile: (p: string, data: string) => result(() => writeFileSync(p, data)),
+  };
+  function CSInterface() {}
+  CSInterface.prototype.getHostEnvironment = () => ({ appName: "FLPR" });
+  CSInterface.prototype.getSystemPath = () => join(base, "Roaming").replace(/\\/g, "/");
+  const window: Record<string, any> = { cep: { fs: fsLike } };
+  const context = vm.createContext({ window, CSInterface, SystemPath: { USER_DATA: "userData" } });
+  vm.runInContext(await readFile(join(helpers, "zeploy-usage.js"), "utf8"), context);
+  const u = window["zeployUsageV1"]("com.zeus.audimate", "1.6.0");
+  u.action("import");
+  u.action("save", 120);
+  u.error("save");
+  const rows = await readUsage(join(base, "Local"));
+  const row = [...rows.values()][0];
+  assert.deepEqual([row?.plugin, row?.app], ["com.zeus.audimate", "animate"], "app read from CSInterface");
+  assert.deepEqual(row?.actions, { import: { n: 1, ms: 0 }, save: { n: 1, ms: 120 } });
+  assert.deepEqual(row?.errors, { save: 1 });
+
+  // Without a zeploy folder, nothing is written.
+  const bare = await makeTmp();
+  CSInterface.prototype.getSystemPath = () => join(bare, "Roaming").replace(/\\/g, "/");
+  window["zeployUsageV1"]("com.zeus.audimate", "1.6.0").action("import");
+  assert.deepEqual(readdirSync(bare), []);
 });

@@ -156,7 +156,8 @@ file name is the id with characters outside `A-Z a-z 0-9 . _ -` replaced by
 // The app ("aftereffects", ...) is read from CSInterface when it is loaded.
 // It appends one line to %LOCALAPPDATA%\zeploy\usage\<plugin>.jsonl, and
 // only on PCs where zeploy is installed. It uses Node's fs when the panel
-// enables Node (--enable-nodejs), else window.cep.fs. It never throws,
+// enables Node (--enable-nodejs), else window.cep.fs (which needs
+// CSInterface.js to find the folder). It never throws,
 // never shows anything and never uses the network.
 
 (function (root) {
@@ -165,10 +166,22 @@ file name is the id with characters outside `A-Z a-z 0-9 . _ -` replaced by
   var MAX_BYTES = 524288;
   var HOSTS = { AEFT: "aftereffects", PPRO: "premiere", ILST: "illustrator", FLPR: "animate" };
 
+  // With --enable-nodejs, Node is global in a mixed context and under
+  // cep_node otherwise.
+  function nodeRequire() {
+    if (typeof require === "function") return require;
+    return root.cep_node && typeof root.cep_node.require === "function" ? root.cep_node.require : null;
+  }
+
+  function nodeProcess() {
+    if (typeof process !== "undefined") return process;
+    return root.cep_node ? root.cep_node.process : null;
+  }
+
   function node() {
     try {
-      if (typeof require !== "function") return null;
-      return { fs: require("fs"), path: require("path") };
+      var req = nodeRequire();
+      return req ? { fs: req("fs"), path: req("path") } : null;
     } catch (e) {
       return null;
     }
@@ -185,7 +198,8 @@ file name is the id with characters outside `A-Z a-z 0-9 . _ -` replaced by
 
   function localAppData() {
     try {
-      if (typeof process !== "undefined" && process.env && process.env.LOCALAPPDATA) return process.env.LOCALAPPDATA;
+      var proc = nodeProcess();
+      if (proc && proc.env && proc.env.LOCALAPPDATA) return proc.env.LOCALAPPDATA;
     } catch (e) {}
     try {
       // Without Node: the user's Roaming folder, next to Local.

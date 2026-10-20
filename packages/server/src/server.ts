@@ -31,7 +31,7 @@ import {
   backfillKeys,
 } from "./packages.ts";
 import { AGENT_PACKAGE_ID, MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
-import { UsageStore } from "./usage.ts";
+import { firstDay, UsageStore } from "./usage.ts";
 
 export interface ServerOptions {
   dataDir: string;
@@ -746,7 +746,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         return json(res, 200, { ok: true });
       case "GET /api/usage": {
         const days = Math.min(Math.max(Number(q("days")) || 30, 1), 180);
-        return json(res, 200, { days, plugins: usage.summary(days) });
+        return json(res, 200, { days, from: firstDay(days), plugins: usage.summary(days) });
       }
       case "POST /api/settings": {
         const body = z.object({ usage: z.boolean() }).parse(await readJson(req));

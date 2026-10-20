@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.zeploy.testpanel" ExtensionBundleVersion="1.1.0">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.zeploy.testpanel" ExtensionBundleVersion="1.2.0">
   <ExtensionList>
-    <Extension Id="com.zeploy.testpanel.main" Version="1.1.0" />
+    <Extension Id="com.zeploy.testpanel.main" Version="1.2.0" />
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
@@ -19,6 +19,10 @@
       <DispatchInfo>
         <Resources>
           <MainPath>./index.html</MainPath>
+          <!-- Node, for the zeploy usage helper to write its file. -->
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+          </CEFCommandLine>
         </Resources>
         <UI>
           <Type>Panel</Type>

@@ -433,9 +433,10 @@ the folder's path.
 
 To try zeploy on the team PCs first, add `examples\test-panel`: a do-nothing
 After Effects panel (`com.zeploy.testpanel`) that is safe to install and
-remove, and that leaves the registry alone. It is at version 1.1.0; to try
-an update, raise `version` in its `zeploy.json` and `ExtensionBundleVersion`
-in `panel\CSXS\manifest.xml`, then add it again.
+remove, and that leaves the registry alone. It is at version 1.2.0, which
+also reports plugin usage (see [See which plugins are used](#see-which-plugins-are-used)).
+To try an update, raise `version` in its `zeploy.json` and
+`ExtensionBundleVersion` in `panel\CSXS\manifest.xml`, then add it again.
 
 The admin app checks the package, zips it and stores it with its SHA-256. Each
 version can be added once. If the content changed, raise the version (in the
@@ -566,11 +567,32 @@ token.
 
 ### See which plugins are used
 
-**Usage** (top bar, or `u`) ranks the plugins by how many PCs use them, over
-the last 7, 30 or 90 days: used on how many of the PCs that have it, uses,
-opens, errors and when it was last used. Click a plugin for its features
-(with their average duration), uses per role, the PCs using it most, and its
-versions.
+**Dashboard** (top bar, or `d`; `p` goes back to the PCs) shows, for the last
+7, 30 or 90 days:
+
+- how many plugins were used, uses, PCs using plugins and errors, each
+  against the period before;
+- uses per day, the most used plugins (on how many PCs), and uses per role;
+- plugins that report usage but were not used, and packages that do not
+  report usage yet;
+- every plugin in a table: used on how many of the PCs that have it, uses,
+  opens, errors and last use. Click one for its features (with their average
+  duration), roles, the PCs using it most, and its versions.
+
+Hover over a day or a bar for its number; the daily chart also has a table
+view.
+
+To try it, add `examples\test-panel` (1.2.0) and install it on a PC with agent
+0.8.0: opening the panel and its **Try a feature** button are reported, and
+show on the dashboard within a minute. To see the dashboard with sample data
+on the admin PC (7 PCs, 60 days, in `.zeploy-test\demo-data`):
+
+```bash
+npm run server -- --host 127.0.0.1 --port 7422 --data .zeploy-test/demo-data
+```
+
+Then open `http://127.0.0.1:7422/`. The sample data comes from
+`scripts/demo-usage.mjs`.
 
 Plugins report this themselves, so each plugin needs a small helper: copy it
 from `examples/usage/` and call it where its features run. The contract is in

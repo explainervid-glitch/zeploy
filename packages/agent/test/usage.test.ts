@@ -216,3 +216,20 @@ test("the prompt for plugin projects carries the helpers as they are", async () 
     assert.ok(prompt.includes(code), `docs/plugin-usage-prompt.md has an old copy of ${name}`);
   }
 });
+
+test("the CEP helper finds Node under cep_node, as in a panel with --enable-nodejs", async () => {
+  const base = await makeTmp();
+  mkdirSync(join(base, "zeploy"));
+  const window: Record<string, any> = {
+    cep_node: { require: createRequire(import.meta.url), process: { env: { LOCALAPPDATA: base } } },
+  };
+  vm.runInContext(await readFile(join(helpers, "zeploy-usage.js"), "utf8"), vm.createContext({ window }));
+  window["zeployUsageV1"]("com.zeploy.testpanel", "1.2.0", "aftereffects").action("try");
+  const [row] = [...(await readUsage(base)).values()];
+  assert.deepEqual([row?.plugin, row?.actions], ["com.zeploy.testpanel", { try: { n: 1, ms: 0 } }]);
+});
+
+test("the test panel carries the CEP helper as it is", async () => {
+  const panel = join(helpers, "..", "test-panel", "panel", "zeploy-usage.js");
+  assert.equal(await readFile(panel, "utf8"), await readFile(join(helpers, "zeploy-usage.js"), "utf8"));
+});

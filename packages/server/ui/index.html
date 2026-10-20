@@ -15,8 +15,11 @@
 <body>
   <header class="topbar">
     <h1 class="brand"><span class="prompt" aria-hidden="true">&gt;_</span> zeploy</h1>
+    <nav class="views" aria-label="View">
+      <button type="button" id="view-pcs" class="view" aria-pressed="true">PCs</button>
+      <button type="button" id="view-dashboard" class="view" aria-pressed="false">Dashboard</button>
+    </nav>
     <span id="online" class="online" aria-live="polite"></span>
-    <button type="button" id="open-usage" class="btn ghost">Usage</button>
     <button type="button" id="open-settings" class="btn ghost">Settings</button>
     <button type="button" id="connect-pc" class="btn ghost">Connect PC</button>
     <button type="button" id="add-package" class="btn primary">Add package</button>
@@ -26,11 +29,21 @@
 
   <div class="layout">
     <main class="main">
-      <div class="main-bar">
-        <div id="filters" class="filters" role="group" aria-label="Show"></div>
-        <button type="button" id="update-agents" class="btn xs" hidden></button>
+      <div id="pcs-view" class="view-body">
+        <div class="main-bar">
+          <div id="filters" class="filters" role="group" aria-label="Show"></div>
+          <button type="button" id="update-agents" class="btn xs" hidden></button>
+        </div>
+        <div id="matrix"></div>
       </div>
-      <div id="matrix"></div>
+      <div id="dashboard" class="view-body dashboard" hidden>
+        <div class="main-bar">
+          <div id="dash-period" class="filters" role="group" aria-label="Period"></div>
+          <span id="dash-note" class="muted small dash-note"></span>
+        </div>
+        <div id="dash-body"></div>
+      </div>
+      <div id="chart-tip" class="chart-tip" role="tooltip" hidden></div>
     </main>
 
     <div id="side-resizer" class="resizer" role="separator" aria-orientation="vertical" aria-controls="side"
@@ -218,22 +231,6 @@
     </div>
   </dialog>
 
-  <dialog id="usage-dialog" class="sheet wide" aria-labelledby="usage-title">
-    <div class="sheet-head">
-      <h2 id="usage-title">Plugin usage</h2>
-      <button type="button" class="icon-btn" data-close aria-label="Close">
-        <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
-      </button>
-    </div>
-    <div class="sheet-body">
-      <div class="usage-bar">
-        <div id="usage-period" class="filters" role="group" aria-label="Period"></div>
-        <span id="usage-note" class="muted small"></span>
-      </div>
-      <div id="usage-table"></div>
-    </div>
-  </dialog>
-
   <dialog id="rename-dialog" class="sheet" aria-labelledby="rename-title">
     <form id="rename-form">
       <div class="sheet-head">
@@ -281,7 +278,8 @@
     <span><kbd>1</kbd> changes</span>
     <span><kbd>2</kbd> activity</span>
     <span><kbd>s</kbd> side panel</span>
-    <span><kbd>u</kbd> usage</span>
+    <span><kbd>d</kbd> dashboard</span>
+    <span><kbd>p</kbd> PCs</span>
     <span><kbd>esc</kbd> close</span>
     <span id="status-server" class="status-server"></span>
   </footer>

@@ -6,11 +6,28 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "packages/server/src/main.ts",
-        "--host", "127.0.0.1",
-        "--port", "7421",
-        "--data", ".zeploy-test/admin-data"
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "7421",
+        "--data",
+        ".zeploy-test/admin-data"
       ],
       "port": 7421
+    },
+    {
+      "name": "zeploy-admin-demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "packages/server/src/main.ts",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "7422",
+        "--data",
+        ".zeploy-test/demo-data"
+      ],
+      "port": 7422
     }
   ]
 }

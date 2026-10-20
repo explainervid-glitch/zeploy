@@ -710,7 +710,7 @@ function render() {
   renderSide();
   if ($("connect-dialog").open) renderRecent();
   if ($("settings-dialog").open) renderSettings();
-  if ($("usage-dialog").open) renderUsage();
+  if (view === "dashboard") renderDashboard();
   if (focus) document.querySelector(focus)?.focus();
 }
 
@@ -1074,15 +1074,20 @@ function renderSettings() {
   $("usage-enabled").checked = state.usageEnabled;
 }
 
-// ---- Plugin usage --------------------------------------------------------------------------------
-// Which plugins the team uses: from the daily totals PCs send (agent 0.8.0)
+// ---- Dashboard ----------------------------------------------------------------------------------
+// Which plugins the team uses, from the daily totals PCs send (agent 0.8.0)
 // for plugins that include the zeploy usage helper (docs/plugin-usage.md).
+// One period filter scopes everything below it. Charts are single-series in
+// --chart; every value is also in a table.
 
-const USAGE_PERIODS = [7, 30, 90];
-let usageDays = Number(remember.get("usageDays")) || 30;
-let usageData = null;
-let usageOpen = null; // the row whose details are shown
-let usageTimer = null;
+const DASH_PERIODS = [7, 30, 90];
+let view = remember.get("view") === "dashboard" ? "dashboard" : "pcs";
+let dashDays = DASH_PERIODS.includes(Number(remember.get("usageDays"))) ? Number(remember.get("usageDays")) : 30;
+// cur: this period; wide: this period and the one before (for changes);
+// all: 180 days (which plugins report usage at all).
+const dash = { cur: null, wide: null, all: null, loading: false };
+let usageOpen = null; // the plugin whose details are shown
+let dashTimer = null;
 
 // The package a plugin id belongs to: its id, or one of its plugin
 // identities ("cep:com.colosave.panel" for "com.colosave.panel").
@@ -1096,14 +1101,14 @@ function installedOn(pkg) {
 }
 
 // One row per package (or per plugin id zeploy has no package for).
-function usageRows() {
+function usageRows(data) {
   const rows = new Map();
-  for (const u of usageData?.plugins ?? []) {
+  for (const u of data?.plugins ?? []) {
     const pkg = packageForPlugin(u.plugin);
     const key = pkg ? `pkg:${pkg.id}` : `id:${u.plugin.toLowerCase()}`;
     let r = rows.get(key);
     if (!r) {
-      r = { key, pkg, name: pkg?.name ?? u.plugin, ids: [], opens: 0, uses: 0, errors: 0, last: "", actions: {}, versions: {}, agents: {} };
+      r = { key, pkg, name: pkg?.name ?? u.plugin, ids: [], opens: 0, uses: 0, errors: 0, last: "", actions: {}, versions: {}, agents: {}, perDay: {} };
       rows.set(key, r);
     }
     r.ids.push(u.plugin);
@@ -1123,16 +1128,145 @@ function usageRows() {
       t.uses += a.uses;
       if (a.last > t.last) t.last = a.last;
     }
+    for (const [day, d] of Object.entries(u.perDay ?? {})) {
+      const t = (r.perDay[day] ??= { opens: 0, uses: 0, errors: 0 });
+      t.opens += d.opens;
+      t.uses += d.uses;
+      t.errors += d.errors;
+    }
   }
   for (const r of rows.values()) {
     // A plugin that reports features is used when they are; one that only
     // reports opening, when it is opened.
     r.byUses = r.uses > 0;
     r.count = r.byUses ? r.uses : r.opens;
+    r.countOn = (day) => (r.byUses ? r.perDay[day]?.uses : r.perDay[day]?.opens) ?? 0;
     r.usedOn = Object.values(r.agents).filter((a) => (r.byUses ? a.uses : a.opens) > 0).length;
     r.installed = r.pkg ? installedOn(r.pkg) : null;
   }
   return [...rows.values()].sort((a, b) => b.usedOn - a.usedOn || b.count - a.count || a.name.localeCompare(b.name));
+}
+
+// "2026-10-20" and the days after it.
+function dayList(from, n) {
+  const [y, m, d] = from.split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const day = new Date(y, m - 1, d + i);
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  });
+}
+
+const shortDay = (day) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+// 1,284 / 12.9K / 4.2M
+function compact(n) {
+  if (n < 10_000) return Math.round(n).toLocaleString("en-US");
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 100_000 ? 1 : 0).replace(/\.0$/, "")}K`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+// A clean axis maximum whose half is clean too: 120, 150, 200, 300...
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((x) => x >= v) ?? 10 * p;
+}
+
+// The change against the previous period of the same length.
+function deltaHtml(cur, prev, upIsGood) {
+  const period = `vs previous ${dashDays} days`;
+  if (prev === 0) return cur ? `<span class="delta muted">none in the previous ${dashDays} days</span>` : "";
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct === 0) return `<span class="delta muted">same as previous ${dashDays} days</span>`;
+  const good = pct > 0 === upIsGood;
+  return `<span class="delta ${good ? "good" : "bad"}">${pct > 0 ? "▲ +" : "▼ "}${pct}% <span class="muted">${period}</span></span>`;
+}
+
+// A trend in the quiet gray, the latest day marked in --chart.
+function sparkline(values) {
+  if (values.length < 2) return "";
+  const w = 120;
+  const h = 28;
+  const max = Math.max(...values, 1);
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * (w - 8) + 4, h - 4 - (v / max) * (h - 8)]);
+  const [lx, ly] = pts.at(-1);
+  return (
+    `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">` +
+    `<polyline points="${pts.map((p) => p.map((n) => n.toFixed(1)).join(",")).join(" ")}" />` +
+    `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" /></svg>`
+  );
+}
+
+function tile(label, value, sub, extra = "") {
+  return (
+    `<div class="tile"><div class="tile-label">${label}</div>` +
+    `<div class="tile-value">${value}${sub ? ` <span class="tile-sub">${sub}</span>` : ""}</div>${extra}</div>`
+  );
+}
+
+// Uses per day: one series of columns, the busiest day labelled, a hover
+// tooltip per day, and a table twin.
+function columnChart(days, values) {
+  const W = 760;
+  const H = 190;
+  const left = 40;
+  const right = 8;
+  const top = 18;
+  const bottom = 24;
+  const plotW = W - left - right;
+  const plotH = H - top - bottom;
+  const max = niceMax(Math.max(...values));
+  const band = plotW / days.length;
+  const colW = Math.max(2, Math.min(24, band - 2));
+  const y = (v) => top + plotH - (v / max) * plotH;
+  let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Uses per day over ${days.length} days">`;
+  for (const t of [0, max / 2, max]) {
+    svg += `<line class="grid" x1="${left}" x2="${W - right}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" />`;
+    svg += `<text class="tick" x="${left - 6}" y="${(y(t) + 3).toFixed(1)}" text-anchor="end">${compact(t)}</text>`;
+  }
+  const peak = values.indexOf(Math.max(...values));
+  const labelEvery = Math.ceil(days.length / 7);
+  days.forEach((day, i) => {
+    const v = values[i];
+    const x = left + i * band + (band - colW) / 2;
+    if (v > 0) {
+      svg += `<rect class="col" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${colW.toFixed(1)}" height="${(top + plotH - y(v)).toFixed(1)}" />`;
+    }
+    if (i === peak && v > 0) {
+      svg += `<text class="peak" x="${(x + colW / 2).toFixed(1)}" y="${(y(v) - 5).toFixed(1)}" text-anchor="middle">${compact(v)}</text>`;
+    }
+    if (i % labelEvery === 0) {
+      svg += `<text class="tick" x="${(left + i * band + band / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(shortDay(day))}</text>`;
+    }
+    // The whole day's band is the hover target, bigger than the column.
+    svg +=
+      `<rect class="hit" x="${(left + i * band).toFixed(1)}" y="${top}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" ` +
+      `data-tip-value="${v} ${v === 1 ? "use" : "uses"}" data-tip-title="${esc(shortDay(day))}" aria-label="${esc(shortDay(day))}: ${v} uses" />`;
+  });
+  svg += `<line class="axis" x1="${left}" x2="${W - right}" y1="${top + plotH}" y2="${top + plotH}" /></svg>`;
+  const table =
+    `<details class="details table-view"><summary>Show as table</summary><table class="usage compact"><thead><tr><th>Day</th><th>Uses</th></tr></thead><tbody>` +
+    days.map((d, i) => `<tr><td>${esc(shortDay(d))}</td><td>${values[i]}</td></tr>`).join("") +
+    `</tbody></table></details>`;
+  return svg + table;
+}
+
+// Horizontal bars, longest first, the value at the tip.
+function hbars(items, max) {
+  if (!items.length) return `<p class="empty-line">Nothing in this period.</p>`;
+  return (
+    `<div class="hbars">` +
+    items
+      .map(
+        (it) =>
+          `<div class="hbar-row" tabindex="0" data-tip-title="${esc(it.name)}" data-tip-value="${esc(it.tip)}">` +
+          `<span class="hbar-name" title="${esc(it.name)}">${esc(it.name)}</span>` +
+          `<span class="hbar-track"><span class="hbar" style="--w:${(it.value / max).toFixed(3)}"></span>` +
+          `<span class="hbar-val">${esc(it.label)}</span></span></div>`,
+      )
+      .join("") +
+    `</div>`
+  );
 }
 
 function usageDetails(r) {
@@ -1174,30 +1308,8 @@ function usageDetails(r) {
   );
 }
 
-function renderUsage() {
-  $("usage-period").innerHTML = USAGE_PERIODS.map(
-    (d) => `<button type="button" class="filter" data-usage-days="${d}" aria-pressed="${usageDays === d}">${d} days</button>`,
-  ).join("");
-  const el = $("usage-table");
-  if (!state.usageEnabled) {
-    $("usage-note").textContent = "";
-    el.innerHTML = `<p class="empty-line">Usage reporting is off. Switch it on under Settings.</p>`;
-    return;
-  }
-  if (!usageData) {
-    el.innerHTML = `<p class="empty-line">Loading…</p>`;
-    return;
-  }
-  const rows = usageRows();
-  const reporting = state.agents.filter((a) => (a.features ?? []).includes("usage")).length;
-  $("usage-note").textContent = `${pcs(reporting)} of ${state.agents.length} can report (agent 0.8.0)`;
-  if (!rows.length) {
-    el.innerHTML =
-      `<p class="empty-line">No usage in the last ${usageDays} days. Plugins report once they include the zeploy usage helper ` +
-      `(docs/plugin-usage.md), on PCs with agent 0.8.0.</p>`;
-    return;
-  }
-  el.innerHTML =
+function rankingTable(rows) {
+  return (
     `<table class="usage"><thead><tr><th>#</th><th>Plugin</th><th>Used on</th><th>Uses</th><th>Opens</th><th>Errors</th><th>Last used</th></tr></thead><tbody>` +
     rows
       .map((r, i) => {
@@ -1215,27 +1327,188 @@ function renderUsage() {
         );
       })
       .join("") +
-    `</tbody></table>`;
+    `</tbody></table>`
+  );
 }
 
-async function loadUsage() {
+const box = (title, body, cls = "") => `<section class="box ${cls}"><h3 class="box-title">${title}</h3>${body}</section>`;
+
+function renderDashboard() {
+  $("dash-period").innerHTML = DASH_PERIODS.map(
+    (d) => `<button type="button" class="filter" data-dash-days="${d}" aria-pressed="${dashDays === d}">Last ${d} days</button>`,
+  ).join("");
+  const reporting = state.agents.filter((a) => (a.features ?? []).includes("usage")).length;
+  $("dash-note").textContent = `${pcs(reporting)} of ${state.agents.length} can report usage (agent 0.8.0)`;
+  const el = $("dash-body");
+  // A reload keeps the last picture, dimmed, instead of flashing.
+  el.classList.toggle("stale", dash.loading && !!dash.cur);
+  if (!state.usageEnabled) {
+    el.innerHTML = `<p class="empty-line">Usage reporting is off. Switch it on under Settings.</p>`;
+    return;
+  }
+  if (!dash.cur || !dash.wide || !dash.all) {
+    if (!el.innerHTML) el.innerHTML = `<p class="empty-line">Loading…</p>`;
+    return;
+  }
+
+  const rows = usageRows(dash.cur);
+  const days = dayList(dash.cur.from, dashDays);
+  const daily = days.map((d) => rows.reduce((n, r) => n + r.countOn(d), 0));
+  const wide = usageRows(dash.wide);
+  const prevDays = dayList(dash.wide.from, dash.wide.days - dashDays);
+  const prevUses = prevDays.reduce((n, d) => n + wide.reduce((m, r) => m + r.countOn(d), 0), 0);
+  const prevErrors = prevDays.reduce((n, d) => n + wide.reduce((m, r) => m + (r.perDay[d]?.errors ?? 0), 0), 0);
+  const prevUsed = wide.filter((r) => prevDays.some((d) => r.countOn(d) > 0)).length;
+  const all = usageRows(dash.all);
+
+  const used = rows.filter((r) => r.usedOn > 0);
+  const uses = daily.reduce((a, b) => a + b, 0);
+  const errors = rows.reduce((n, r) => n + r.errors, 0);
+  const pcsUsing = new Set(
+    rows.flatMap((r) => Object.entries(r.agents).filter(([, a]) => (r.byUses ? a.uses : a.opens) > 0).map(([id]) => id)),
+  ).size;
+
+  const kpis =
+    `<div class="kpis">` +
+    tile("Plugins used", String(used.length), `of ${all.length} reporting`, deltaHtml(used.length, prevUsed, true)) +
+    tile("Uses", compact(uses), "", deltaHtml(uses, prevUses, true) + sparkline(daily)) +
+    tile("PCs using plugins", String(pcsUsing), `of ${state.agents.length}`) +
+    tile("Errors", compact(errors), "", deltaHtml(errors, prevErrors, false)) +
+    `</div>`;
+
+  if (all.length === 0) {
+    el.innerHTML =
+      kpis +
+      box(
+        "No plugin reports usage yet",
+        `<p class="muted small">Add the zeploy usage helper to a plugin (docs/plugin-usage-prompt.md is a ready prompt), or install the zeploy test panel 1.2.0 and use its button. PCs need agent 0.8.0.</p>`,
+      );
+    return;
+  }
+
+  const top = used.slice(0, 10);
+  const pluginBars = hbars(
+    top.map((r) => ({
+      name: r.name,
+      value: r.usedOn,
+      label: `${pcs(r.usedOn)} · ${compact(r.count)}`,
+      tip: `${pcs(r.usedOn)}, ${r.count} ${r.byUses ? "uses" : "opens"}`,
+    })),
+    Math.max(1, ...top.map((r) => r.usedOn)),
+  );
+  const roleUses = new Map();
+  const agents = new Map(state.agents.map((a) => [a.id, a]));
+  for (const r of rows) {
+    for (const [id, a] of Object.entries(r.agents)) {
+      const role = agents.get(id)?.role || "No role";
+      roleUses.set(role, (roleUses.get(role) ?? 0) + (r.byUses ? a.uses : a.opens));
+    }
+  }
+  const roles = [...roleUses].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  const roleBars = hbars(
+    roles.map(([name, n]) => ({ name, value: n, label: compact(n), tip: `${n} uses` })),
+    Math.max(1, ...roles.map(([, n]) => n)),
+  );
+
+  // Plugins that report usage but were not used in the period; and packages that never report.
+  const reportingIds = new Set(all.filter((r) => r.pkg).map((r) => r.pkg.id));
+  const idle = all.filter((r) => r.pkg && !used.some((u) => u.key === r.key));
+  const silent = latestPackages().filter((p) => !reportingIds.has(p.id));
+  const idleList = idle.length
+    ? `<ul class="plain">${idle
+        .map((r) => `<li><span>${esc(r.name)}</span><span class="muted">on ${pcs(installedOn(r.pkg))}, last used ${relTime(r.last)}</span></li>`)
+        .join("")}</ul>`
+    : `<p class="empty-line">Every plugin that reports usage was used.</p>`;
+  const silentList = silent.length
+    ? `<ul class="plain">${silent.map((p) => `<li><span>${esc(p.name)}</span><span class="muted">on ${pcs(installedOn(p))}</span></li>`).join("")}</ul>` +
+      `<p class="muted small">No usage helper yet (docs/plugin-usage-prompt.md).</p>`
+    : `<p class="empty-line">Every package reports usage.</p>`;
+
+  el.innerHTML =
+    kpis +
+    box("Uses per day", columnChart(days, daily)) +
+    `<div class="two-up">` +
+    box(`Most used plugins <span class="muted">· PCs using each</span>`, pluginBars) +
+    box("Uses per role", roleBars) +
+    `</div>` +
+    `<div class="two-up">` +
+    box(`Not used in the last ${dashDays} days`, idleList) +
+    box("Not reporting usage", silentList) +
+    `</div>` +
+    box("All plugins", rankingTable(rows));
+}
+
+async function loadDashboard() {
+  if (!state) return;
+  dash.loading = true;
+  renderDashboard();
   try {
-    usageData = await api("GET", `/api/usage?days=${usageDays}`);
+    const [cur, wide, all] = await Promise.all([
+      api("GET", `/api/usage?days=${dashDays}`),
+      api("GET", `/api/usage?days=${Math.min(dashDays * 2, 180)}`),
+      api("GET", "/api/usage?days=180"),
+    ]);
+    Object.assign(dash, { cur, wide, all });
   } catch (err) {
     toast(err.message, true);
+  } finally {
+    dash.loading = false;
   }
-  if ($("usage-dialog").open) renderUsage();
+  if (view === "dashboard") renderDashboard();
 }
 
-function openUsage() {
-  usageData = null;
-  usageOpen = null;
-  renderUsage();
-  $("usage-dialog").showModal();
-  void loadUsage();
-  clearInterval(usageTimer);
-  usageTimer = setInterval(() => ($("usage-dialog").open ? void loadUsage() : clearInterval(usageTimer)), 30_000);
+function showView(next) {
+  view = next;
+  remember.set("view", view);
+  $("pcs-view").hidden = view !== "pcs";
+  $("dashboard").hidden = view !== "dashboard";
+  $("view-pcs").setAttribute("aria-pressed", String(view === "pcs"));
+  $("view-dashboard").setAttribute("aria-pressed", String(view === "dashboard"));
+  hideTip();
+  clearInterval(dashTimer);
+  if (view === "dashboard") {
+    void loadDashboard();
+    dashTimer = setInterval(() => void loadDashboard(), 30_000);
+  }
 }
+
+// One tooltip for every chart: the value leads, the label follows. Text goes
+// in with textContent; names come from PCs and plugins.
+function showTip(target, x, y) {
+  const tip = $("chart-tip");
+  const value = document.createElement("strong");
+  value.textContent = target.dataset.tipValue;
+  const title = document.createElement("span");
+  title.textContent = target.dataset.tipTitle;
+  tip.replaceChildren(value, title);
+  tip.hidden = false;
+  const main = document.querySelector(".main");
+  const box = main.getBoundingClientRect();
+  tip.style.left = `${Math.min(Math.max(x - box.left + 12, 4), box.width - tip.offsetWidth - 4)}px`;
+  tip.style.top = `${y - box.top + main.scrollTop + 16}px`;
+}
+
+function hideTip() {
+  $("chart-tip").hidden = true;
+  document.querySelector(".tip-on")?.classList.remove("tip-on");
+}
+
+$("dash-body").addEventListener("pointermove", (event) => {
+  const target = event.target.closest?.("[data-tip-value]");
+  if (!target) return hideTip();
+  document.querySelector(".tip-on")?.classList.remove("tip-on");
+  target.classList.add("tip-on");
+  showTip(target, event.clientX, event.clientY);
+});
+$("dash-body").addEventListener("pointerleave", hideTip);
+$("dash-body").addEventListener("focusin", (event) => {
+  const target = event.target.closest?.("[data-tip-value]");
+  if (!target) return;
+  const r = target.getBoundingClientRect();
+  target.classList.add("tip-on");
+  showTip(target, r.left + r.width / 2, r.top);
+});
+$("dash-body").addEventListener("focusout", hideTip);
 
 function openSettings() {
   tokenShown = false;
@@ -1394,15 +1667,13 @@ document.addEventListener("click", async (event) => {
     else if (d.rename) openRename(d.rename);
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
     else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
-    else if (d.usageDays) {
-      usageDays = Number(d.usageDays);
-      remember.set("usageDays", String(usageDays));
-      usageData = null;
-      renderUsage();
-      await loadUsage();
+    else if (d.dashDays) {
+      dashDays = Number(d.dashDays);
+      remember.set("usageDays", String(dashDays));
+      await loadDashboard();
     } else if (d.usageRow) {
       usageOpen = usageOpen === d.usageRow ? null : d.usageRow;
-      renderUsage();
+      renderDashboard();
     }
     else if (d.refreshPkg) await refreshPackage(d.refreshPkg);
     else if (d.close !== undefined) el.closest("dialog")?.close();
@@ -1443,7 +1714,8 @@ $("tab-activity").addEventListener("click", () => {
 });
 $("connect-pc").addEventListener("click", () => state && openConnect());
 $("open-settings").addEventListener("click", () => state && openSettings());
-$("open-usage").addEventListener("click", () => state && openUsage());
+$("view-pcs").addEventListener("click", () => showView("pcs"));
+$("view-dashboard").addEventListener("click", () => showView("dashboard"));
 $("usage-enabled").addEventListener("change", async () => {
   const usage = $("usage-enabled").checked;
   if (!usage) {
@@ -1487,7 +1759,9 @@ document.addEventListener("keydown", (event) => {
     1: showTab("changes"),
     2: showTab("activity"),
     s: () => setSideCollapsed(!sideCollapsed),
-    u: () => state && openUsage(),
+    d: () => showView("dashboard"),
+    u: () => showView("dashboard"),
+    p: () => showView("pcs"),
   }[event.key];
   if (!act) return;
   event.preventDefault();
@@ -1609,12 +1883,14 @@ function connectEvents() {
     $("banner").hidden = false;
   });
   events.addEventListener("state", (event) => {
+    const first = !state;
     state = JSON.parse(event.data);
     if (pendingSelect && state.packages.some((p) => p.id === pendingSelect.id && p.version === pendingSelect.version)) {
       selectForApps(pendingSelect.id, pendingSelect.apps);
       pendingSelect = null;
     }
     render();
+    if (first && view === "dashboard") void loadDashboard();
   });
   events.addEventListener("log", (event) => {
     const { jobId, line } = JSON.parse(event.data);
@@ -1625,6 +1901,7 @@ function connectEvents() {
   });
 }
 
+showView(view);
 connectEvents();
 // Relative times ("5 min ago") age without server events.
 setInterval(render, 30_000);

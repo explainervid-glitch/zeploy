@@ -29,6 +29,8 @@ export interface PluginUsage {
   last: string;
   // Per PC, by agent id.
   agents: Record<string, { opens: number; uses: number; last: string }>;
+  // Per day ("2026-10-20"), for charts.
+  perDay: Record<string, { opens: number; uses: number; errors: number }>;
 }
 
 function addRecord<T extends string>(into: Record<T, number>, from: Record<T, number>): void {
@@ -45,6 +47,11 @@ function merge(into: DayRow, row: DayRow): void {
   addRecord(into.errors, row.errors);
   addRecord(into.versions, row.versions);
   if (row.last > into.last) into.last = row.last;
+}
+
+// The first day of the last `days` days, today included.
+export function firstDay(days: number, now = new Date()): string {
+  return localDay(new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000));
 }
 
 function localDay(d: Date): string {
@@ -87,7 +94,7 @@ export class UsageStore {
 
   // Everything from the last `days` days, today included, per plugin.
   summary(days: number, now = new Date()): PluginUsage[] {
-    const from = localDay(new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000));
+    const from = firstDay(days, now);
     const plugins = new Map<string, PluginUsage>();
     for (const [day, perAgent] of Object.entries(this.#data.days)) {
       if (day < from) continue;
@@ -96,7 +103,7 @@ export class UsageStore {
           const key = row.plugin.toLowerCase();
           let p = plugins.get(key);
           if (!p) {
-            p = { plugin: row.plugin, apps: [], opens: 0, uses: 0, actions: {}, errors: 0, versions: {}, last: "", agents: {} };
+            p = { plugin: row.plugin, apps: [], opens: 0, uses: 0, actions: {}, errors: 0, versions: {}, last: "", agents: {}, perDay: {} };
             plugins.set(key, p);
           }
           const uses = Object.values(row.actions).reduce((n, a) => n + a.n, 0);
@@ -108,7 +115,12 @@ export class UsageStore {
             t.n += a.n;
             t.ms += a.ms;
           }
-          p.errors += Object.values(row.errors).reduce((n, v) => n + v, 0);
+          const errors = Object.values(row.errors).reduce((n, v) => n + v, 0);
+          p.errors += errors;
+          const d = (p.perDay[day] ??= { opens: 0, uses: 0, errors: 0 });
+          d.opens += row.opens;
+          d.uses += uses;
+          d.errors += errors;
           addRecord(p.versions, row.versions);
           if (row.last > p.last) p.last = row.last;
           const a = (p.agents[agentId] ??= { opens: 0, uses: 0, last: "" });

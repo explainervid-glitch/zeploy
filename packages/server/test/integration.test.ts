@@ -509,6 +509,7 @@ test("plugin usage goes from the spool to the admin's totals, and stops when swi
     assert.equal(plugin.uses, 2);
     assert.deepEqual(plugin.actions, { export: { n: 2, ms: 300 } });
     assert.deepEqual(plugin.agents["agent-usage-0001"], { opens: 1, uses: 2, last: plugin.last });
+    assert.deepEqual(Object.values(plugin.perDay), [{ opens: 1, uses: 2, errors: 0 }], "one day, for the charts");
     await waitFor("spool deleted", async () => (await readdir(usageDir)).length === 0);
     assert.equal((await api("GET", "/api/state")).body.usageEnabled, true);
 

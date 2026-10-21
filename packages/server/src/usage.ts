@@ -2,9 +2,10 @@
 // usage.json beside state.json. Nothing finer is stored: no times of day, no
 // user names, no event details beyond the plugin's own short names.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { UsageRow } from "../../protocol/src/index.ts";
+import { JsonFile, type JsonFileOptions } from "./json-file.ts";
 
 type DayRow = Omit<UsageRow, "day">;
 
@@ -60,26 +61,19 @@ function localDay(d: Date): string {
 }
 
 export class UsageStore {
-  readonly #file: string;
+  readonly #file: JsonFile;
   #data: UsageData;
   #timer: NodeJS.Timeout | null = null;
-  #writing: Promise<void> = Promise.resolve();
 
-  private constructor(file: string, data: UsageData) {
+  private constructor(file: JsonFile, data: UsageData) {
     this.#file = file;
     this.#data = data;
   }
 
-  static async open(dir: string): Promise<UsageStore> {
+  static async open(dir: string, options: JsonFileOptions = {}): Promise<UsageStore> {
     await mkdir(dir, { recursive: true });
-    const file = join(dir, "usage.json");
-    let data: UsageData;
-    try {
-      data = JSON.parse(await readFile(file, "utf8")) as UsageData;
-    } catch {
-      data = { version: 1, days: {} };
-    }
-    return new UsageStore(file, data);
+    const file = new JsonFile(join(dir, "usage.json"), options);
+    return new UsageStore(file, (await file.read<UsageData>()) ?? { version: 1, days: {} });
   }
 
   add(agentId: string, rows: UsageRow[]): void {
@@ -138,22 +132,27 @@ export class UsageStore {
     if (this.#timer) return;
     this.#timer = setTimeout(() => {
       this.#timer = null;
-      void this.flush();
+      this.flush().catch(() => {});
     }, 500);
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     if (this.#timer) {
       clearTimeout(this.#timer);
       this.#timer = null;
     }
-    const oldest = localDay(new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000));
-    for (const day of Object.keys(this.#data.days)) if (day < oldest) delete this.#data.days[day];
-    const text = JSON.stringify(this.#data);
-    this.#writing = this.#writing.then(async () => {
-      await writeFile(`${this.#file}.tmp`, text);
-      await rename(`${this.#file}.tmp`, this.#file);
+    return this.#file.write(() => {
+      const oldest = localDay(new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000));
+      for (const day of Object.keys(this.#data.days)) if (day < oldest) delete this.#data.days[day];
+      return JSON.stringify(this.#data);
     });
-    return this.#writing;
+  }
+
+  async close(): Promise<void> {
+    try {
+      await this.flush();
+    } finally {
+      this.#file.stop();
+    }
   }
 }

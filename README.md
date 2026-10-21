@@ -716,7 +716,8 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | Problem | Fix |
 | --- | --- |
 | Adding a package says `... is already in the repository with different content` | Raise the version: in the plugin's manifest, in `zeploy.json`, or in the Add dialog |
-| The admin app says `The admin server could not start` | Another admin app or `npm run server` is using port 7420. Close it |
+| The admin app says `The admin server could not start` | The message says why. `Port 7420 is in use`: another admin app or `npm run server` is running; close it. `state.json is damaged` or `cannot read`: the admin did not start, so nothing was overwritten; restore `state.json` from a backup or from `rescue\` |
+| `admin.log` says `could not save ...state.json` | Another program held the file for a moment; the admin tries again every few seconds and logs `saved ... again` when it works. If it keeps failing, see [Rescue the admin's data](#rescue-the-admins-data) |
 | The admin app does not start at all when run from `Z:` | Electron cannot start from a network share. Start `%LOCALAPPDATA%\Programs\zeploy-admin\zeploy-admin.exe` |
 | `electron.exe` is missing after `npm install` | Run `npm run setup:electron` |
 | A PC shows "Agent 0.2.0" and no **Update agent** | Its agent predates self-update. Run the installer on it once: see [A PC shows "Agent 0.2.0"](#a-pc-shows-agent-020-and-has-no-update-agent) |
@@ -729,6 +730,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | What | Where |
 | --- | --- |
 | Admin data: packages, PCs, jobs, team token | `%APPDATA%\zeploy-admin\` (`state.json` and `packages\`) on the admin PC |
+| Plugin usage, admin log | `usage.json` and `admin.log` in the same folder |
 | Admin app | `%LOCALAPPDATA%\Programs\zeploy-admin\` |
 | Agent | `C:\Program Files\zeploy\zeploy-agent.exe` |
 | Agent settings | `C:\ProgramData\zeploy\agent.json` |
@@ -738,6 +740,39 @@ the full log. Nothing on the PC changes when a job fails before installing.
 Back up `%APPDATA%\zeploy-admin\` on the admin PC. It holds the team token;
 if it is lost, the admin app creates a new token and every PC needs `setup`
 again.
+
+### Rescue the admin's data
+
+The admin app keeps everything in memory and saves it to `state.json`. In admin
+apps built before 21 October 2026, one failed save (another program holding the file for a moment) stopped
+every later save without a word, so `state.json` could be days behind what
+the app shows. Check the date of `%APPDATA%\zeploy-admin\state.json`: if it
+is old while you changed things since, the newer state is only in the
+running app. **Do not close the app** until it is rescued:
+
+1. With the admin app still running, from this folder:
+
+   ```bash
+   node scripts/restore-state.mjs save
+   ```
+
+   It writes `rescue\state-<time>.json` and lists what it holds (PCs, names,
+   roles, packages, the last 100 jobs, without their logs).
+2. Close the admin app. Rebuild (`npm run build`) so the new version saves
+   reliably.
+3. Put the rescued state in place, with the path the first step printed:
+
+   ```bash
+   node scripts/restore-state.mjs install "%APPDATA%\zeploy-admin\rescue\state-<time>.json"
+   ```
+
+   It keeps the old `state.json` in `rescue\` and refuses while an admin is
+   still running.
+4. Start the admin app and check the PCs, names, roles and packages.
+
+Since then, a failed save is retried every few seconds and logged in
+`admin.log`, and an unreadable `state.json` stops the admin instead of being
+replaced with an empty one.
 
 ### Command line (zeploy)
 

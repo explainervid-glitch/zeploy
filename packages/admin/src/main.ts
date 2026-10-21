@@ -6,7 +6,7 @@
 // Bundled to CommonJS by scripts/build.mjs, so no top-level await here.
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { migrateLegacyDir } from "../../core/src/index.ts";
 import { DEFAULT_PORT } from "../../protocol/src/index.ts";
@@ -44,11 +44,30 @@ function theme(): { color: string; symbolColor: string; height: number } {
     : { color: "#F4F2EC", symbolColor: "#1C1E1F", height: 46 };
 }
 
+// %APPDATA%\zeploy-admin\admin.log (the data folder): what the server logs,
+// such as agents connecting and a state.json that cannot be saved. Kept
+// under 5 MB, with one older file beside it.
+function fileLogger(dir: string): (line: string) => void {
+  const file = join(dir, "admin.log");
+  return (line: string) => {
+    const stamped = `${new Date().toISOString()} ${line}`;
+    console.log(stamped);
+    try {
+      if ((statSync(file, { throwIfNoEntry: false })?.size ?? 0) > 5 * 1024 * 1024) renameSync(file, `${file}.1`);
+      appendFileSync(file, stamped + "\n");
+    } catch {
+      // Logging must never stop the admin.
+    }
+  };
+}
+
 async function boot(): Promise<void> {
   const port = Number(process.env["ZEPLOY_PORT"] ?? DEFAULT_PORT);
   try {
+    const dataDir = process.env["ZEPLOY_ADMIN_DATA"] ?? app.getPath("userData");
     server = await startServer({
-      dataDir: process.env["ZEPLOY_ADMIN_DATA"] ?? app.getPath("userData"),
+      dataDir,
+      log: fileLogger(dataDir),
       port,
       host: process.env["ZEPLOY_ADMIN_HOST"],
       uiDir: join(__dirname, "ui"),
@@ -59,7 +78,9 @@ async function boot(): Promise<void> {
     dialog.showErrorBox(
       "zeploy",
       `The admin server could not start: ${(err as Error).message}\n\n` +
-        `Port ${port} may be in use, for example by another zeploy admin that is still running.`,
+        ((err as NodeJS.ErrnoException).code === "EADDRINUSE"
+          ? `Port ${port} is in use, for example by another zeploy admin that is still running.`
+          : `Nothing was changed. Fix the problem above, then start zeploy again.`),
     );
     app.quit();
     return;

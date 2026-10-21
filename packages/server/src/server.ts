@@ -142,8 +142,8 @@ const jobRequestSchema = z.object({
 
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
   const log = options.log ?? ((line: string) => console.log(`${new Date().toISOString()} ${line}`));
-  const store = await Store.open(options.dataDir);
-  const usage = await UsageStore.open(options.dataDir);
+  const store = await Store.open(options.dataDir, { log });
+  const usage = await UsageStore.open(options.dataDir, { log });
   const usageOn = () => store.data.usage !== false;
   // Usage batches already stored, per agent, so one sent again is not counted twice.
   const usageSeen = new Map<string, string[]>();
@@ -883,8 +883,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
       await keysBackfilled;
       for (const timer of restartTimers.values()) clearTimeout(timer);
       if (stateTimer) clearTimeout(stateTimer);
-      await store.flush();
-      await usage.flush();
+      // Both, even when one cannot be saved (that one is logged).
+      await Promise.allSettled([store.close(), usage.close()]);
     },
   };
 }

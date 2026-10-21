@@ -19,6 +19,7 @@ import {
   type ExecuteOptions,
 } from "../../core/src/index.ts";
 import * as P from "../../protocol/src/index.ts";
+import type { Problems } from "./problems.ts";
 import type { AgentUpdater } from "./update.ts";
 import { AGENT_VERSION } from "./version.ts";
 
@@ -44,6 +45,10 @@ export interface AgentOptions {
   onAdmins?: (change: { add: string[]; remove: string[] }) => void;
   // Plugin usage (usage.ts): an admin stored the batch with this id.
   onUsageAck?: (id: string) => void;
+  // Faults the agent carried on after (problems.ts), and how the waker is
+  // (waker.ts): both go out with the state.
+  problems?: Problems;
+  waker?: () => P.AgentState["waker"];
   // Test seams.
   detect?: () => Promise<Environment>;
   exec?: Pick<ExecuteOptions, "processes" | "kill">;
@@ -79,6 +84,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
       ...(options.updater ? [P.FEATURE_SELF_UPDATE] : []),
       ...(options.onAdmins ? [P.FEATURE_ADMINS] : []),
       ...(options.onUsageAck ? [P.FEATURE_USAGE] : []),
+      ...(options.waker ? [P.FEATURE_WAKER] : []),
     ],
     ...options.info,
   };
@@ -101,32 +107,48 @@ export function startAgent(options: AgentOptions): RunningAgent {
     if (channel && socket?.readyState === WebSocket.OPEN) socket.send(channel.seal(message));
   }
 
+  const problem = (message: string) => {
+    log(message);
+    options.problems?.record(message);
+  };
+
+  // What the PC has, as last read: sent again with the problems when it
+  // cannot be read.
+  let lastState: P.AgentState | null = null;
+
+  function withExtras(state: P.AgentState): P.AgentState {
+    return {
+      ...state,
+      ...(options.admins ? { admins: options.admins() } : {}),
+      ...(options.problems ? { problems: options.problems.recent() } : {}),
+      ...(options.waker ? { waker: options.waker() } : {}),
+    };
+  }
+
   async function sendState(): Promise<void> {
     try {
       const env = await detect();
       const receipts = await listReceipts(env);
       const found = await scanInstalled(env).catch((err: Error) => {
-        log(`could not look for installed plugins: ${err.message}`);
+        problem(`could not look for installed plugins: ${err.message}`);
         return [];
       });
-      send({
-        type: "state",
-        state: {
-          isAdmin: env.isAdmin,
-          adobe: env.adobe.map((a) => ({ app: a.app, version: a.version })),
-          blender: env.blender.map((b) => b.version),
-          receipts: receipts.map((r) => ({
-            id: r.id,
-            version: r.version,
-            installedAt: r.installedAt,
-            ...(r.failed?.length ? { failed: r.failed.map((f) => f.part) } : {}),
-          })),
-          found,
-          ...(options.admins ? { admins: options.admins() } : {}),
-        },
-      });
+      lastState = {
+        isAdmin: env.isAdmin,
+        adobe: env.adobe.map((a) => ({ app: a.app, version: a.version })),
+        blender: env.blender.map((b) => b.version),
+        receipts: receipts.map((r) => ({
+          id: r.id,
+          version: r.version,
+          installedAt: r.installedAt,
+          ...(r.failed?.length ? { failed: r.failed.map((f) => f.part) } : {}),
+        })),
+        found,
+      };
+      send({ type: "state", state: withExtras(lastState) });
     } catch (err) {
-      log(`could not report state: ${(err as Error).message}`);
+      problem(`could not report what this PC has: ${(err as Error).message}`);
+      if (lastState) send({ type: "state", state: withExtras(lastState) });
     }
   }
 

@@ -29,6 +29,8 @@ const USAGE_ACK_MS = 2 * 60_000;
 export interface RunningAdmins {
   readonly servers: string[];
   status(url: string): AgentStatus | undefined;
+  // Sends every connected admin what is installed (and the problems).
+  report(): void;
   stop(): Promise<void>;
   idle(): Promise<void>;
 }
@@ -159,6 +161,7 @@ export function startAdmins(options: AdminsOptions): RunningAdmins {
       return [...links.keys()];
     },
     status: (url) => links.get(P.normalizeServerUrl(url))?.status,
+    report: () => report(),
     idle: async () => {
       await applying;
       await Promise.all([...links.values()].map((l) => l.agent.idle()));

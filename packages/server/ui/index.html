@@ -257,6 +257,25 @@
     </form>
   </dialog>
 
+  <dialog id="log-dialog" class="sheet wide" aria-labelledby="log-title">
+    <div class="sheet-head">
+      <h2 id="log-title">Agent log</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">
+        <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <p id="log-file" class="muted small code"></p>
+      <p id="log-error" class="error" role="alert" hidden></p>
+      <pre id="log-text" class="log-view" tabindex="0"></pre>
+    </div>
+    <div class="sheet-foot">
+      <span class="note muted small">The end of agent.log, read by the PC's waker.</span>
+      <button type="button" class="btn" data-copy-log>Copy</button>
+      <button type="button" class="btn" data-close>Done</button>
+    </div>
+  </dialog>
+
   <dialog id="confirm-dialog" class="sheet narrow" aria-labelledby="confirm-title" aria-describedby="confirm-body">
     <form method="dialog">
       <div class="sheet-head">

@@ -32,6 +32,7 @@ import {
 } from "./packages.ts";
 import { AGENT_PACKAGE_ID, MAX_JOB_LOG_LINES, Store, type AgentRecord, type JobRecord } from "./store.ts";
 import { firstDay, UsageStore } from "./usage.ts";
+import { callWaker, WakerUnreachable } from "./waker.ts";
 
 export interface ServerOptions {
   dataDir: string;
@@ -46,6 +47,10 @@ export interface ServerOptions {
   // zeploy-agent.json next to it.
   agentExe?: string;
   log?: (line: string) => void;
+  // Port PCs' wakers answer on; default P.WAKER_PORT (tests change it).
+  wakerPort?: number;
+  // How often PCs whose agent is offline are asked about; default 30 s.
+  wakerCheckMs?: number;
 }
 
 export interface RunningServer {
@@ -153,6 +158,11 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const sseClients = new Set<ServerResponse>();
   // Agent updates waiting for the new agent to connect, by job id.
   const restartTimers = new Map<string, NodeJS.Timeout>();
+  // What the wakers of PCs whose agent is offline last said: the PC is on,
+  // whether its agent runs, why it stopped. Not stored; asked again every
+  // wakerCheckMs.
+  const wakers = new Map<string, { checkedAt: string; status: P.WakerStatus | null; error?: string }>();
+  const wakerPort = options.wakerPort ?? P.WAKER_PORT;
   let agentBuild: AgentBuild | null = null;
   let port = options.port ?? P.DEFAULT_PORT;
   // Files dropped on the UI but never added; nothing refers to them after a restart.
@@ -185,6 +195,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         ...a,
         online: conns.has(a.id),
         busy: conns.get(a.id)?.busy ?? null,
+        // While offline: what the PC's waker said, if it has one.
+        waker: conns.has(a.id) ? null : (wakers.get(a.id) ?? null),
       })),
       packages: store.data.packages,
       jobs: store.data.jobs
@@ -197,6 +209,11 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   let stateTimer: NodeJS.Timeout | null = null;
   function changed(): void {
     store.save();
+    broadcast();
+  }
+
+  // Sends the UI the state without saving: for what is not stored.
+  function broadcast(): void {
     if (stateTimer) return;
     stateTimer = setTimeout(() => {
       stateTimer = null;
@@ -306,12 +323,64 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     changed();
   }
 
+  // ---- wakers -------------------------------------------------------------------
+
+  const hasWaker = (agent: AgentRecord) => !!agent.features?.includes(P.FEATURE_WAKER);
+  const wakerHosts = (agent: AgentRecord) => [agent.address, agent.hostname];
+
+  // Asks one offline PC's waker how it is; tells the UI when that changed.
+  async function checkWaker(agent: AgentRecord): Promise<void> {
+    let seen: { checkedAt: string; status: P.WakerStatus | null; error?: string };
+    try {
+      const status = await callWaker(wakerHosts(agent), wakerPort, store.data.enrollToken, agent.id, "status", P.wakerStatusSchema);
+      seen = { checkedAt: new Date().toISOString(), status };
+    } catch (err) {
+      seen = { checkedAt: new Date().toISOString(), status: null, error: (err as Error).message };
+    }
+    // Came online meanwhile: what the waker said is stale.
+    if (conns.has(agent.id) || closing) return;
+    const before = wakers.get(agent.id);
+    wakers.set(agent.id, seen);
+    if (JSON.stringify(before?.status ?? null) !== JSON.stringify(seen.status)) broadcast();
+  }
+
+  let checkingWakers = false;
+  let closing = false;
+  async function checkWakers(): Promise<void> {
+    if (checkingWakers) return;
+    checkingWakers = true;
+    try {
+      const offline = Object.values(store.data.agents).filter((a) => !conns.has(a.id) && hasWaker(a));
+      await Promise.all(offline.map(checkWaker));
+    } finally {
+      checkingWakers = false;
+    }
+  }
+  const wakerTimer = setInterval(() => void checkWakers(), options.wakerCheckMs ?? 30_000);
+  wakerTimer.unref();
+
+  // Runs a waker action for a PC on the admin's request.
+  async function askWaker<T>(id: string, action: P.WakerAction, schema: z.ZodType<T>, timeoutMs?: number): Promise<T> {
+    const agent = store.data.agents[id];
+    if (!agent) throw new HttpError(404, "no such PC");
+    if (!hasWaker(agent)) {
+      throw new HttpError(409, `${agent.label ?? agent.hostname} has agent ${agent.agentVersion}, which has no waker; update its agent first`);
+    }
+    try {
+      return await callWaker(wakerHosts(agent), wakerPort, store.data.enrollToken, agent.id, action, schema, timeoutMs);
+    } catch (err) {
+      if (!(err instanceof WakerUnreachable)) throw err;
+      throw new HttpError(502, `could not reach the waker on ${agent.label ?? agent.hostname} (${err.message})`);
+    }
+  }
+
   // ---- agents -------------------------------------------------------------------
 
   function onAgentConnected(conn: Conn, info: P.AgentInfo, address: string): void {
     const old = conns.get(conn.agentId);
     conns.set(conn.agentId, conn);
     old?.ws.terminate();
+    wakers.delete(conn.agentId);
     const now = new Date().toISOString();
     const prev: AgentRecord | undefined = store.data.agents[conn.agentId];
     store.data.agents[conn.agentId] = {
@@ -456,6 +525,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     else if (job) finishJob(job, false, "agent disconnected during the job");
     log(`agent ${store.data.agents[conn.agentId]?.hostname ?? conn.agentId} disconnected`);
     changed();
+    // Whether it is gone for good or only its agent stopped shows soon.
+    const agent = store.data.agents[conn.agentId];
+    if (agent && hasWaker(agent)) setTimeout(() => conns.has(agent.id) || void checkWaker(agent), 5000).unref();
   }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
@@ -800,6 +872,20 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         changed();
         return json(res, 200, agent);
       }
+      case "POST /api/agents/wake": {
+        const { id } = z.object({ id: z.string() }).parse(await readJson(req));
+        if (conns.has(id)) throw new HttpError(409, "the agent is already online");
+        // The waker waits up to 20 s for the agent to start.
+        const result = await askWaker(id, "wake", P.wakerWakeSchema, 30_000);
+        const agent = store.data.agents[id];
+        log(`wake ${agent?.hostname ?? id}: ${result.message}`);
+        if (agent) void checkWaker(agent);
+        return json(res, 200, result);
+      }
+      case "POST /api/agents/log": {
+        const { id } = z.object({ id: z.string() }).parse(await readJson(req));
+        return json(res, 200, await askWaker(id, "log", P.wakerLogSchema, 10_000));
+      }
       case "DELETE /api/agents": {
         const id = q("id");
         if (conns.has(id)) throw new HttpError(409, "the agent is online; it would only reappear");
@@ -860,6 +946,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
 
   // Hashing the agent exe takes a moment; the UI shows the update when done.
   const agentBuildLoaded = refreshAgentBuild().catch((err: Error) => log(`could not read the agent exe: ${err.message}`));
+  // PCs that were offline when the server stopped: on, or off?
+  setTimeout(() => void checkWakers(), 2000).unref();
   const keysBackfilled = backfillKeys(store)
     .then((changedAny) => changedAny && changed())
     .catch((err: Error) => log(`could not read stored packages: ${err.message}`));
@@ -870,7 +958,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     adminUrl: `http://127.0.0.1:${port}/`,
     store,
     async close() {
+      closing = true;
       clearInterval(heartbeat);
+      clearInterval(wakerTimer);
       if (stateTimer) clearTimeout(stateTimer);
       for (const res of sseClients) res.end();
       for (const conn of conns.values()) conn.ws.terminate();

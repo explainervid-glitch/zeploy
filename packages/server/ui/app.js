@@ -202,13 +202,45 @@ function agentApps(agent) {
   return parts.join(", ") || "No target apps found";
 }
 
+// How a PC is, beyond online and offline (agent 0.9.0 and its waker):
+//   error: the agent hit problems, a job on it failed, or it stopped with an error;
+//   idle:  the PC is on (its waker answers) but the agent does not run.
+// `reasons` say what is wrong; `wake` whether Wake up can help.
+function pcStatus(agent) {
+  if (agent.online) {
+    const reasons = (agent.state?.problems ?? []).map((p) => `${p.message} (${relTime(p.at)})`);
+    const failed = latestPackages().filter((p) => cellInfo(agent, p).status === "failed");
+    if (failed.length) reasons.push(`${listText(failed.map((p) => p.name))}: last job failed`);
+    const update = state.jobs.find((j) => j.agentId === agent.id && isAgentJob(j) && !isCancelled(j));
+    if (update?.status === "failed" && compareSemver(agent.agentVersion, update.version ?? "0.0.0") < 0) {
+      reasons.push(`agent update to ${update.version} failed`);
+    }
+    return reasons.length ? { kind: "error", reasons, wake: false } : { kind: "online", reasons, wake: false };
+  }
+  const w = agent.waker?.status;
+  if (!w) return { kind: "offline", reasons: [], wake: false };
+  if (w.agentRunning) return { kind: "error", reasons: ["the agent runs but cannot reach this admin computer"], wake: false };
+  if (w.crash) return { kind: "error", reasons: [`the agent stopped ${relTime(w.crash.at)}: ${w.crash.error}`], wake: true };
+  return {
+    kind: "idle",
+    reasons: [w.signedIn ? "the PC is on, but its agent is not running" : `the PC is on; nobody is signed in as ${agent.user}`],
+    wake: true,
+  };
+}
+
+const STATUS_WORDS = { online: "Online", offline: "Offline", idle: "Idle", error: "Error" };
+
 function agentDetails(agent) {
+  const s = pcStatus(agent);
+  const waker = agent.state?.waker;
   return [
     agent.role ? `Role: ${agent.role}` : "No role",
     agent.label ? `${agent.hostname}, ${agent.address}` : agent.address,
-    agent.online ? `Online, user ${agent.user}` : `Offline, last seen ${relTime(agent.lastSeen)}`,
+    agent.online ? `Online, user ${agent.user}` : `${STATUS_WORDS[s.kind]}, last seen ${relTime(agent.lastSeen)}`,
+    ...s.reasons.map((r) => `! ${r}`),
     agentApps(agent),
     `Agent ${agent.agentVersion}`,
+    ...(waker && !waker.running ? [`No waker: ${waker.error ?? "not running"}`] : []),
   ].join("\n");
 }
 
@@ -425,6 +457,25 @@ function cellHtml(agent, pkg) {
   );
 }
 
+function statusDot(agent) {
+  const kind = pcStatus(agent).kind;
+  return `<span class="dot ${{ online: "on", idle: "idle", error: "err", offline: "" }[kind]}" aria-label="${STATUS_WORDS[kind]}" role="img"></span>`;
+}
+
+// Idle and error next to the PC's name, with what can be done about them.
+// Show log needs the waker (agent 0.9.0).
+function statusHtml(agent) {
+  const s = pcStatus(agent);
+  if (s.kind !== "idle" && s.kind !== "error") return "";
+  const name = esc(nameOf(agent));
+  const canLog = (agent.features ?? []).includes("waker");
+  return (
+    `<span class="state-tag ${s.kind === "idle" ? "idle" : "err"}" title="${esc(s.reasons.join("\n"))}">${STATUS_WORDS[s.kind]}</span>` +
+    (s.wake ? `<button type="button" class="state-btn" data-wake="${esc(agent.id)}" aria-label="Wake up the agent on ${name}">Wake up</button>` : "") +
+    (s.kind === "error" && canLog ? `<button type="button" class="state-btn" data-show-log="${esc(agent.id)}" aria-label="Show the agent log of ${name}">Show log</button>` : "")
+  );
+}
+
 function rowHtml(agent, pkgs) {
   const warn =
     agent.online && agent.state && !agent.state.isAdmin
@@ -442,7 +493,7 @@ function rowHtml(agent, pkgs) {
   return (
     `<tr class="${agent.online ? "" : "offline"}"><th scope="row" class="rowhead">` +
     `<div class="rowhead-in" title="${esc(agentDetails(agent))}">` +
-    `<span class="dot${agent.online ? " on" : ""}"></span><span class="pc-name">${esc(nameOf(agent))}</span>${warn}${agentTagHtml(agent)}` +
+    `${statusDot(agent)}<span class="pc-name">${esc(nameOf(agent))}</span>${statusHtml(agent)}${warn}${agentTagHtml(agent)}` +
     `<span class="row-actions">${update}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Edit the name and role of ${esc(nameOf(agent))}">Edit</button>${forget}</span>` +
     `</div></th>${pkgs.map((p) => cellHtml(agent, p)).join("")}</tr>`
   );
@@ -1707,6 +1758,45 @@ async function saveRename(label) {
   }
 }
 
+// ---- idle and error PCs: through the PC's waker --------------------------------------------
+
+async function wakeAgent(button, id) {
+  const agent = state.agents.find((a) => a.id === id);
+  button.disabled = true;
+  button.textContent = "Waking…";
+  try {
+    const r = await api("POST", "/api/agents/wake", { id });
+    toast(`${agent ? nameOf(agent) : "PC"}: ${r.message}`, !r.started);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Wake up";
+  }
+}
+
+async function showLog(id) {
+  const agent = state.agents.find((a) => a.id === id);
+  const dialog = $("log-dialog");
+  $("log-title").textContent = `Agent log${agent ? `: ${nameOf(agent)}` : ""}`;
+  $("log-file").textContent = "Reading the log…";
+  $("log-text").textContent = "";
+  $("log-text").hidden = false;
+  $("log-error").hidden = true;
+  if (!dialog.open) dialog.showModal();
+  try {
+    const r = await api("POST", "/api/agents/log", { id });
+    $("log-file").textContent = r.file;
+    $("log-text").textContent = r.text || "The log is empty.";
+    $("log-text").scrollTop = $("log-text").scrollHeight;
+  } catch (err) {
+    $("log-file").textContent = "";
+    $("log-error").textContent = err.message;
+    $("log-error").hidden = false;
+    $("log-text").hidden = true;
+  }
+}
+
 // ---- events -------------------------------------------------------------------------------
 
 document.addEventListener("click", async (event) => {
@@ -1733,6 +1823,9 @@ document.addEventListener("click", async (event) => {
     else if (d.open === "add") openAdd();
     else if (d.rename) openRename(d.rename);
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
+    else if (d.wake) await wakeAgent(el, d.wake);
+    else if (d.showLog) await showLog(d.showLog);
+    else if (d.copyLog !== undefined) await copy($("log-text").textContent, "Log copied");
     else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
     else if (d.dashDays) {
       dashDays = Number(d.dashDays);

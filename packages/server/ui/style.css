@@ -188,6 +188,8 @@ kbd {
 .online { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .dot { width: 7px; height: 7px; background: var(--line2); flex: none; }
 .dot.on { background: var(--ok); }
+.dot.idle { background: var(--warn); }
+.dot.err { background: var(--err); }
 
 .banner {
   padding: 6px 20px;
@@ -359,6 +361,38 @@ body.side-collapsed .side-strip:hover { background: var(--raised); color: var(--
 @media (hover: none) { .row-actions, .colhead-remove, .colhead-update { opacity: 1; } }
 .grid tbody tr:hover { background: color-mix(in oklab, var(--raised) 60%, transparent); }
 tr.offline .dot, tr.offline .pc-name, tr.offline .cell-btn > * { opacity: 0.45; }
+tr.offline .dot.idle, tr.offline .dot.err { opacity: 1; }
+/* Idle and error next to the name, and what to do about them. */
+.state-tag { flex: none; font-size: 11px; white-space: nowrap; }
+.state-tag.idle { color: var(--warn); }
+.state-tag.idle::before { content: "z "; }
+.state-tag.err { color: var(--err); font-weight: 700; }
+.state-tag.err::before { content: "! "; }
+.state-btn {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--line2);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.state-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.state-btn:disabled { color: var(--muted); cursor: progress; }
+dialog.sheet.wide { width: min(900px, calc(100vw - 32px)); }
+.log-view {
+  margin: 0;
+  height: min(60vh, 520px);
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+  font: 11px/1.55 var(--mono);
+  white-space: pre;
+}
 
 .cell-btn {
   width: 100%;

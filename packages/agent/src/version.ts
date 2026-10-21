@@ -2,4 +2,4 @@
 // without loading the agent. The admin app offers an agent update to every
 // PC that runs an older version than the zeploy-agent.exe it holds, so bump
 // this whenever the agent changes.
-export const AGENT_VERSION = "0.8.0";
+export const AGENT_VERSION = "0.9.0";

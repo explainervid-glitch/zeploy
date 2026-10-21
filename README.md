@@ -201,7 +201,15 @@ a local administrator first.
 - Registers a Scheduled Task named "zeploy agent". It starts the agent hidden,
   with highest privileges, every time that user signs in. If the agent stops
   with an error, the task restarts it up to three times, one minute apart.
+- Registers a second Scheduled Task, "zeploy waker", and starts it. It runs
+  the same exe as SYSTEM from boot, so the admin app can still reach the PC
+  while the agent is not running (see [PC status](#pc-status)). It answers
+  on TCP port 7425, which setup opens in Windows Firewall for the local
+  network only.
 - Starts the agent immediately.
+
+An agent from before 0.9.0 sets up the waker itself once it is updated to
+0.9.0, if it runs elevated.
 
 The agent runs as the signed-in user, elevated. That lets it write to Program
 Files and to the user's own registry (`HKCU`), `%APPDATA%` and Blender
@@ -216,15 +224,16 @@ Run these in an administrator PowerShell on the team PC, from
 .\zeploy-agent.exe status
 ```
 
-Shows the version, the admin computers, whether a token is set, the PC id, whether the agent is
-running, and the log path.
+Shows the version, the admin computers, whether a token is set, the PC id, whether the agent and
+the waker are running, and the log path.
 
 ```bash
 .\zeploy-agent.exe remove
 ```
 
-Stops the agent and deletes the Scheduled Task. The exe and `agent.json`
-stay, and plugins it installed stay installed.
+Stops the agent and the waker, and deletes both Scheduled Tasks and the
+waker's firewall rule. The exe and `agent.json` stay, and plugins it
+installed stay installed.
 
 - **Update the agent:** bump the version, rebuild (`npm run build`) and restart
   the admin app, then use
@@ -466,9 +475,30 @@ There is one row per PC and one column per package (its latest version). Columns
 
 **Activity** uses the same marks, plus a green `[✓]` for a job that is done.
 
-Each row also shows the PC's user, its IP address, whether it is online, and
+Each row also shows the PC's user, its IP address, its status (below), and
 the Adobe and Blender versions its agent found. Connected PCs are listed even
 before you add a package.
+
+#### PC status
+
+The square before the PC's name, and a word after it:
+
+| Status | Means | Button |
+| --- | --- | --- |
+| Green | Online: the agent is connected | |
+| Gray | Offline: nothing answers, so the PC is off, or its waker is missing | |
+| Amber, "Idle" | The PC is on (its waker answers) but the agent is not running, as after the user signed out | **Wake up** |
+| Red, "Error" | The agent is online but hit a problem in the last day, a job on the PC failed, or its agent update failed; or the agent stopped with an error, or runs but cannot reach this admin computer | **Show log**, and **Wake up** when the agent is not running |
+
+Hover the name for the reasons. Idle and error after the agent stopped need
+agent 0.9.0 and its waker; the admin app asks each offline PC's waker every
+30 seconds.
+
+- **Wake up** starts the agent's Scheduled Task. That only works while the
+  user it runs as is signed in (a locked screen counts); otherwise the
+  message says nobody is signed in, and the agent starts when they sign in.
+- **Show log** shows the end of the PC's `agent.log`, read by its waker, so it
+  works whether the agent runs or not.
 
 "Found" needs agent 0.4.0 or later. The agent looks in the CEP extensions
 folders (all users and this user), the After Effects `Scripts`, `ScriptUI
@@ -733,7 +763,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | Plugin usage, admin log | `usage.json` and `admin.log` in the same folder |
 | Admin app | `%LOCALAPPDATA%\Programs\zeploy-admin\` |
 | Agent | `C:\Program Files\zeploy\zeploy-agent.exe` |
-| Agent settings | `C:\ProgramData\zeploy\agent.json` |
+| Agent settings, waker log | `C:\ProgramData\zeploy\agent.json` and `waker.log` |
 | Install records, staging, agent log | `%LOCALAPPDATA%\zeploy\` of the user the agent runs as |
 | Saved installers (hold the team token) | The folder you chose under **Connect a PC** |
 
@@ -800,12 +830,13 @@ zeploy list                            # packages installed by zeploy on this PC
 | Command | Meaning |
 | --- | --- |
 | `setup --server <ip[:port]> --token <token>` | Install on this PC and start (administrator) |
-| `status` | Show the version, settings and whether the agent runs |
-| `remove` | Stop the agent and delete its Scheduled Task (administrator) |
+| `status` | Show the version, settings and whether the agent and the waker run |
+| `remove` | Stop the agent and the waker and delete their Scheduled Tasks (administrator) |
 | `configure --server ... --token ...` | Change the saved settings only; the agent reads them at start |
 | `run` | Run in the foreground; this is what the Scheduled Task starts |
 | `version` | Print the version |
 | `run --takeover <pid>` | What an agent update starts: connect, then take over from the agent with that pid |
+| `waker --home <folder> --user <DOMAIN\name>` | What the "zeploy waker" task starts as SYSTEM: answer the admin while the agent is not running |
 
 ### Safety rules
 
@@ -836,6 +867,11 @@ zeploy list                            # packages installed by zeploy on this PC
   new exe only if its SHA-256 matches.
 - The admin UI and its API answer only on the admin PC itself, and only with a
   token that changes every time the admin app starts.
+- A PC's waker (port 7425, local network only) does only three things: say
+  whether the agent runs, start the agent's own Scheduled Task, and send the
+  end of `agent.log`. Each request answers a one-time challenge with an HMAC
+  of the team token and the PC's id, and each reply is signed the same way.
+  The log travels unencrypted, like job logs.
 - Traffic is not encrypted: another PC on the LAN could read a package while
   it downloads.
 - `zeploy-agent.exe` is not code-signed.
@@ -931,7 +967,8 @@ Done:
 - **Phase 3, started:** agent self-update from the admin app (0.3.0);
   plugins found on PCs without zeploy, and updating a package from its
   folder (0.4.0); partial Blender installs (0.5.0); Illustrator (0.6.0);
-  several admin computers (0.7.0); plugin usage (0.8.0).
+  several admin computers (0.7.0); plugin usage (0.8.0); idle and error
+  PC status with the waker, Wake up and Show log (0.9.0).
 
 Planned for phase 3:
 

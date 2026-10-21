@@ -49,6 +49,8 @@ export const FEATURE_SELF_UPDATE = "self-update";
 export const FEATURE_ADMINS = "admins";
 // Reports plugin usage and takes "settings" and "usageAck" messages (0.8.0).
 export const FEATURE_USAGE = "usage";
+// Comes with the waker (see "waker" below), and reports problems (0.9.0).
+export const FEATURE_WAKER = "waker";
 
 export const agentInfoSchema = z.object({
   hostname: z.string().max(256),
@@ -233,6 +235,9 @@ export const adminLinkSchema = z.object({
 });
 export type AdminLink = z.infer<typeof adminLinkSchema>;
 
+export const problemSchema = z.object({ at: z.string().max(40), message: z.string().max(500) });
+export type Problem = z.infer<typeof problemSchema>;
+
 export const agentStateSchema = z.object({
   isAdmin: z.boolean(),
   adobe: z.array(z.object({ app: z.string(), version: z.string() })),
@@ -255,6 +260,10 @@ export const agentStateSchema = z.object({
   // Every admin computer this agent connects to, and how that is going.
   // From agent 0.7.0.
   admins: z.array(adminLinkSchema).max(16).optional(),
+  // What went wrong in the agent lately (the last day), newest first. From agent 0.9.0.
+  problems: z.array(problemSchema).max(10).optional(),
+  // Whether the waker runs on this PC, or why it could not be set up. From agent 0.9.0.
+  waker: z.object({ running: z.boolean(), error: z.string().max(500).optional() }).optional(),
 });
 
 export const agentMessageSchema = z.discriminatedUnion("type", [
@@ -278,3 +287,59 @@ export type JobSpec = z.infer<typeof jobSpecSchema>;
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 export type AgentState = z.infer<typeof agentStateSchema>;
 export type AgentMessage = z.infer<typeof agentMessageSchema>;
+
+// ---- waker -------------------------------------------------------------------
+//
+// The agent runs as the signed-in user and stops when they sign out or it
+// crashes; then nothing on the PC answers the admin. The waker is the same
+// zeploy-agent.exe run as SYSTEM from boot (`zeploy-agent waker`). It
+// answers on WAKER_PORT, over plain HTTP:
+//
+//   GET  /waker            {waker: true, version}   (for the agent on the same PC)
+//   GET  /waker/challenge  {nonce}                  single use, for one minute
+//   POST /waker/<action>   {agentId, nonce, mac}    action: status, wake or log
+//     -> {body, mac}       body is the action's reply as JSON text
+//
+// The request MAC proves the admin knows the team token and names the PC it
+// means; the reply MAC proves the answer comes from that PC's waker.
+
+export const WAKER_PORT = 7425;
+export const WAKER_PATH = "/waker";
+
+export const wakerActionSchema = z.enum(["status", "wake", "log"]);
+export type WakerAction = z.infer<typeof wakerActionSchema>;
+
+export const wakerRequestSchema = z.object({
+  agentId: z.string().max(64),
+  nonce: z.string().min(16).max(64),
+  mac: z.string().max(128),
+});
+
+export function wakerRequestMac(token: string, action: WakerAction, agentId: string, nonce: string): string {
+  return hmac(token, `waker:${action}:${agentId}:${nonce}`);
+}
+
+export function wakerReplyMac(token: string, action: WakerAction, nonce: string, body: string): string {
+  return hmac(token, `waker-reply:${action}:${nonce}:${body}`);
+}
+
+export const wakerReplySchema = z.object({ body: z.string(), mac: z.string() });
+
+export const wakerStatusSchema = z.object({
+  agentId: z.string(),
+  // The waker's own version.
+  version: z.string().max(64),
+  agentRunning: z.boolean(),
+  // Whether the user the agent runs as is signed in: the agent can only start then.
+  signedIn: z.boolean(),
+  // The agent stopped with this error and has not connected since.
+  crash: z.object({ at: z.string().max(40), error: z.string().max(2000) }).optional(),
+});
+export type WakerStatus = z.infer<typeof wakerStatusSchema>;
+
+export const wakerWakeSchema = z.object({ started: z.boolean(), message: z.string().max(500) });
+export type WakerWake = z.infer<typeof wakerWakeSchema>;
+
+// The end of agent.log.
+export const wakerLogSchema = z.object({ text: z.string(), file: z.string().max(400) });
+export type WakerLog = z.infer<typeof wakerLogSchema>;

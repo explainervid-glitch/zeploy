@@ -1323,45 +1323,53 @@ function usageDetails(r) {
     byRole.set(role, t);
   }
   const versions = Object.entries(r.versions).sort((a, b) => compareSemver(b[0], a[0]));
-  const list = (title, items) =>
-    `<div class="usage-col"><h4>${title}</h4>${items.length ? `<ul>${items.join("")}</ul>` : `<p class="muted small">None reported.</p>`}</div>`;
+  const count = r.byUses ? "Uses" : "Opens";
+  // One small table per section: a name column, then right-aligned numbers
+  // under their own headings.
+  const section = (title, heads, rows) =>
+    `<div class="usage-col"><h4>${title}</h4>` +
+    (rows.length
+      ? `<table class="mini"><thead><tr>${heads.map((h, i) => `<th${i ? ` class="num"` : ""}>${h}</th>`).join("")}</tr></thead>` +
+        `<tbody>${rows.map((cells) => `<tr>${cells.map((c, i) => `<td${i ? ` class="num"` : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+      : `<p class="muted small">None reported.</p>`) +
+    `</div>`;
   return (
     `<div class="usage-details">` +
-    list(
+    section(
       "Features",
-      actions.map(
-        ([name, a]) =>
-          `<li><span>${esc(name)}</span><span>${a.n}${a.ms ? ` <span class="muted">· ${Math.round(a.ms / a.n)} ms</span>` : ""}</span></li>`,
-      ),
+      ["Feature", "Uses", "Avg time"],
+      actions.map(([name, a]) => [esc(name), a.n, a.ms ? `${Math.round(a.ms / a.n)} ms` : `<span class="muted">–</span>`]),
     ) +
-    list("Roles", [...byRole].sort((a, b) => b[1].n - a[1].n).map(([role, t]) => `<li><span>${esc(role)}</span><span>${t.n} <span class="muted">· ${pcs(t.pcs)}</span></span></li>`)) +
-    list(
+    section(
       "PCs",
-      pcsRows.slice(0, 12).map(
-        (p) =>
-          `<li><span>${esc(p.agent ? nameOf(p.agent) : "Forgotten PC")}</span><span>${r.byUses ? p.uses : p.opens} <span class="muted">· ${relTime(p.last)}</span></span></li>`,
-      ),
+      ["PC", count, "Last"],
+      pcsRows.slice(0, 12).map((p) => [esc(p.agent ? nameOf(p.agent) : "Forgotten PC"), r.byUses ? p.uses : p.opens, `<span class="muted">${relTime(p.last)}</span>`]),
     ) +
-    list("Versions", versions.map(([v, n]) => `<li><span class="code">${esc(v)}</span><span>${n}</span></li>`)) +
+    section(
+      "Roles",
+      ["Role", count, "PCs"],
+      [...byRole].sort((a, b) => b[1].n - a[1].n).map(([role, t]) => [esc(role), t.n, t.pcs]),
+    ) +
+    section("Versions", ["Version", "Events"], versions.map(([v, n]) => [`<span class="code">${esc(v)}</span>`, n])) +
     `</div>`
   );
 }
 
 function rankingTable(rows) {
   return (
-    `<table class="usage"><thead><tr><th>#</th><th>Plugin</th><th>Used on</th><th>Uses</th><th>Opens</th><th>Errors</th><th>Last used</th></tr></thead><tbody>` +
+    `<table class="usage ranking"><thead><tr><th class="rank">#</th><th>Plugin</th><th class="num" title="PCs that used it, of the PCs that have it">Used on PCs</th><th class="num">Uses</th><th class="num">Opens</th><th class="num">Errors</th><th class="num">Last used</th></tr></thead><tbody>` +
     rows
       .map((r, i) => {
         // "of N" only when zeploy knows where it is installed (by hand on more PCs is possible).
-        const on = r.installed && r.installed >= r.usedOn ? `${r.usedOn} of ${pcs(r.installed)}` : pcs(r.usedOn);
+        const on = r.installed && r.installed >= r.usedOn ? `${r.usedOn} <span class="muted">of ${r.installed}</span>` : `${r.usedOn}`;
         const open = usageOpen === r.key;
         return (
           `<tr class="usage-row${open ? " open" : ""}" style="--label:${r.pkg ? labelFor(r.pkg.id) : "var(--line2)"}">` +
           `<td class="rank">${i + 1}</td>` +
           `<td><button type="button" class="usage-name" data-usage-row="${esc(r.key)}" aria-expanded="${open}">${esc(r.name)}</button>` +
-          (r.pkg ? "" : ` <span class="muted small" title="${esc(r.ids.join(", "))}">not in zeploy</span>`) +
-          `</td><td>${on}</td><td>${r.byUses ? r.uses : "–"}</td><td>${r.opens}</td>` +
-          `<td class="${r.errors ? "err" : ""}">${r.errors}</td><td>${relTime(r.last)}</td></tr>` +
+          (r.pkg ? "" : `<span class="usage-sub" title="${esc(r.ids.join(", "))}">not in zeploy</span>`) +
+          `</td><td class="num">${on}</td><td class="num">${r.byUses ? r.uses : `<span class="muted">–</span>`}</td><td class="num">${r.opens}</td>` +
+          `<td class="num${r.errors ? " err" : " muted"}">${r.errors}</td><td class="num muted">${relTime(r.last)}</td></tr>` +
           (open ? `<tr class="usage-more"><td colspan="7">${usageDetails(r)}</td></tr>` : "")
         );
       })

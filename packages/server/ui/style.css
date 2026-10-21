@@ -616,16 +616,29 @@ table.usage th { padding: 6px 10px; text-align: left; font-size: 11px; font-weig
 table.usage td { padding: 6px 10px; border-bottom: 1px dashed var(--line); white-space: nowrap; }
 table.usage td.rank { width: 32px; color: var(--muted); }
 table.usage td.err { color: var(--err); }
+table.usage .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.ranking th { white-space: nowrap; }
+table.ranking th.rank { width: 32px; }
+table.ranking td { padding: 8px 10px; vertical-align: top; }
+table.ranking td.num { padding-left: 18px; }
 .usage-row td:nth-child(2) { border-left: 3px solid var(--label); width: 100%; white-space: normal; }
+.usage-row.open > td { background: var(--raised); border-bottom-color: transparent; }
 .usage-name { border: 0; background: none; padding: 0; font-weight: 700; text-align: left; }
 .usage-name:hover { color: var(--accent); }
 .usage-name::before { content: "▸ "; color: var(--muted); }
 .usage-row.open .usage-name::before { content: "▾ "; }
-.usage-more > td { padding: 10px 12px 14px 44px; background: var(--sunken); white-space: normal; }
-.usage-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
-.usage-col h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
-.usage-col ul { list-style: none; margin: 0; padding: 0; }
-.usage-col li { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.usage-sub { display: block; margin-top: 2px; padding-left: 1.3em; font-size: 11px; color: var(--muted); }
+/* The details line up with the plugin name: past the rank and the colour bar. */
+.usage-more > td { padding: 12px 14px 16px 45px; background: var(--sunken); border-bottom: 1px solid var(--line2); white-space: normal; }
+.usage-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px 24px; align-items: start; }
+.usage-col { min-width: 0; }
+.usage-col h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+table.mini { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.mini th { padding: 3px 0; font-size: 10px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); text-align: left; border-bottom: 1px solid var(--line); }
+table.mini td { padding: 3px 0; border-bottom: 1px dashed var(--line); white-space: nowrap; }
+table.mini tr:last-child td { border-bottom: 0; }
+table.mini td:first-child { overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 100%; }
+table.mini .num { padding-left: 14px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Settings */
 .section-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }

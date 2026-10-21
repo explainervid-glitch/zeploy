@@ -28,6 +28,9 @@ export interface PackageRecord {
   // Apps it installs into ("aftereffects", "blender"); the admin UI groups
   // packages by them.
   apps?: string[];
+  // Whether its scripts carry zeploy's usage helper, so the dashboard can
+  // tell a plugin that does not report usage from one nobody used yet.
+  usageHelper?: boolean;
 }
 
 export interface AgentRecord {

@@ -1112,6 +1112,33 @@ function installedOn(pkg) {
   return state.agents.filter((a) => a.state?.receipts.some((r) => r.id === pkg.id) || foundOn(a, pkg)).length;
 }
 
+// The oldest version of a package that carries the usage helper, or null.
+function helperSince(pkg) {
+  const versions = state.packages.filter((p) => p.id === pkg.id && p.usageHelper).map((p) => p.version);
+  return versions.sort(compareSemver)[0] ?? null;
+}
+
+// Copies of a plugin older than its first version with the usage helper,
+// such as one installed by hand or under another package id. Its host may
+// load that copy instead, which then reports nothing.
+function olderCopies(pkg) {
+  const since = helperSince(pkg);
+  const versions = new Set();
+  let count = 0;
+  if (since) {
+    const keys = packageKeys(pkg);
+    for (const a of state.agents) {
+      const copies = [
+        ...(a.state?.found ?? []).filter((f) => keys.has(f.key)).map((f) => f.version ?? "0.0.0"),
+        ...(a.state?.receipts ?? []).filter((r) => r.id === pkg.id).map((r) => r.version),
+      ].filter((v) => compareSemver(v, since) < 0);
+      if (copies.length) count++;
+      for (const v of copies) versions.add(v);
+    }
+  }
+  return { pcs: count, versions: [...versions].sort(compareSemver) };
+}
+
 // One row per package (or per plugin id zeploy has no package for).
 function usageRows(data) {
   const rows = new Map();
@@ -1422,18 +1449,38 @@ function renderDashboard() {
     Math.max(1, ...roles.map(([, n]) => n)),
   );
 
-  // Plugins that report usage but were not used in the period; and packages that never report.
+  // Not used: plugins that reported before but not in the period, and
+  // packages with the usage helper that never reported a use. Not reporting:
+  // packages without the helper.
   const reportingIds = new Set(all.filter((r) => r.pkg).map((r) => r.pkg.id));
   const idle = all.filter((r) => r.pkg && !used.some((u) => u.key === r.key));
-  const silent = latestPackages().filter((p) => !reportingIds.has(p.id));
-  const idleList = idle.length
-    ? `<ul class="plain">${idle
-        .map((r) => `<li><span>${esc(r.name)}</span><span class="muted">on ${pcs(installedOn(r.pkg))}, last used ${relTime(r.last)}</span></li>`)
-        .join("")}</ul>`
-    : `<p class="empty-line">Every plugin that reports usage was used.</p>`;
+  const unreported = latestPackages().filter((p) => !reportingIds.has(p.id));
+  const notYet = unreported.filter((p) => p.usageHelper);
+  const silent = unreported.filter((p) => !p.usageHelper);
+  const olderNote = (pkg) => {
+    const older = olderCopies(pkg);
+    const app = appGroup(pkg).key ? appGroup(pkg).title : "the app";
+    return older.pcs
+      ? `<span class="warn-note">${pcs(older.pcs)} ${older.pcs === 1 ? "has" : "have"} a copy without the usage helper (${esc(older.versions.join(", "))}); ${esc(app)} may load that one</span>`
+      : "";
+  };
+  const idleList =
+    idle.length || notYet.length
+      ? `<ul class="plain">${idle
+          .map(
+            (r) =>
+              `<li><span>${esc(r.name)}</span><span class="muted">on ${pcs(installedOn(r.pkg))}, last used ${relTime(r.last)}</span>${olderNote(r.pkg)}</li>`,
+          )
+          .join("")}${notYet
+          .map(
+            (p) =>
+              `<li><span>${esc(p.name)}</span><span class="muted">on ${pcs(installedOn(p))}, reports usage since ${esc(helperSince(p))}; no use yet</span>${olderNote(p)}</li>`,
+          )
+          .join("")}</ul>`
+      : `<p class="empty-line">Every plugin that reports usage was used.</p>`;
   const silentList = silent.length
     ? `<ul class="plain">${silent.map((p) => `<li><span>${esc(p.name)}</span><span class="muted">on ${pcs(installedOn(p))}</span></li>`).join("")}</ul>` +
-      `<p class="muted small">No usage helper yet (docs/plugin-usage-prompt.md).</p>`
+      `<p class="muted small">Their ${esc(silent.length === 1 ? "version has" : "versions have")} no usage helper yet (docs/plugin-usage-prompt.md).</p>`
     : `<p class="empty-line">Every package reports usage.</p>`;
 
   el.innerHTML =

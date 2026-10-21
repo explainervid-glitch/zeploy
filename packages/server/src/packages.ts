@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   buildInferredPackage,
   hasManifest,
+  hasUsageHelper,
   inferPlugin,
   retargetScript,
   manifestSchema,
@@ -84,6 +85,8 @@ interface Staged {
   apps: AppId[];
   // See InferredPlugin.key.
   keys: string[];
+  // See PackageRecord.usageHelper.
+  usageHelper: boolean;
   detection?: Detection;
 }
 
@@ -199,6 +202,7 @@ async function stageManifested(store: Store, sourcePath: string, work: string): 
       sha256: pkg.archive?.sha256 ?? "",
       apps: await appsOf(pkg.root, pkg.manifest),
       keys: await packageKeys(pkg.root, pkg.manifest),
+      usageHelper: await hasUsageHelper(pkg.root, pkg.manifest),
     };
   } finally {
     await pkg.close();
@@ -276,6 +280,7 @@ export async function importPackage(
       if (source) existing.source = source;
       existing.keys ??= staged.keys;
       existing.apps ??= apps;
+      existing.usageHelper ??= staged.usageHelper;
       store.save();
       return { record: existing, apps };
     }
@@ -295,6 +300,7 @@ export async function importPackage(
       keys: staged.keys,
       source,
       apps,
+      usageHelper: staged.usageHelper,
     };
     store.data.packages.push(record);
     store.save();
@@ -309,7 +315,7 @@ export async function importPackage(
 // the package sits under its app.
 export async function backfillKeys(store: Store): Promise<boolean> {
   let changed = false;
-  for (const record of store.data.packages.filter((p) => !p.keys || !p.apps)) {
+  for (const record of store.data.packages.filter((p) => !p.keys || !p.apps || p.usageHelper === undefined)) {
     const pkg = await openPackage(join(packagesDir(store), record.file), { stagingRoot: join(store.dir, "staging") }).catch(
       () => null,
     );
@@ -317,6 +323,7 @@ export async function backfillKeys(store: Store): Promise<boolean> {
     try {
       record.keys ??= await packageKeys(pkg.root, pkg.manifest);
       record.apps ??= await appsOf(pkg.root, pkg.manifest);
+      record.usageHelper ??= await hasUsageHelper(pkg.root, pkg.manifest);
       changed = true;
     } finally {
       await pkg.close();

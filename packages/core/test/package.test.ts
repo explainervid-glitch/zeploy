@@ -3,7 +3,7 @@ import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { openPackage, packPackage, PackageError, sha256 } from "../src/index.ts";
+import { hasUsageHelper, openPackage, packPackage, PackageError, sha256, type Manifest } from "../src/index.ts";
 import { makeTmp, write, writeCepPanel } from "./helpers.ts";
 
 async function makePackageFolder(root: string) {
@@ -88,4 +88,23 @@ test("a component source missing from the package is reported", async () => {
     }),
   );
   await assert.rejects(openPackage(root, { stagingRoot: join(root, "staging") }), /source not found/);
+});
+
+test("the usage helper is found in a panel's scripts, a Blender add-on zip and a .zxp", async () => {
+  const root = await makeTmp();
+  const manifest = (type: string, source: string) =>
+    ({ schemaVersion: 1, id: "x", name: "X", version: "1.0.0", components: [{ type, source }] }) as Manifest;
+
+  await writeCepPanel(join(root, "plain"), "com.plain.panel");
+  assert.equal(await hasUsageHelper(root, manifest("cep", "plain")), false);
+
+  await writeCepPanel(join(root, "panel"), "com.counted.panel");
+  await write(join(root, "panel", "js", "zeploy-usage.js"), "function zeployUsageV1(id, version, app) {}");
+  assert.equal(await hasUsageHelper(root, manifest("cep", "panel")), true);
+
+  await write(join(root, "addon.zip"), zipSync({ "addon/__init__.py": strToU8("from . import zeploy_usage\nzeployUsageV1 = 1") }));
+  assert.equal(await hasUsageHelper(root, manifest("blender", "addon.zip")), true);
+
+  await write(join(root, "plain.zxp"), zipSync({ "index.html": strToU8("<html></html>") }));
+  assert.equal(await hasUsageHelper(root, manifest("zxp", "plain.zxp")), false);
 });

@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import { startAdmins } from "../../agent/src/admins.ts";
 import { startAgent, type AgentStatus, type RunningAgent } from "../../agent/src/agent.ts";
 import { fakeEnv, makeTmp, noProcesses, write, writeCepPanel } from "../../core/test/helpers.ts";
+import { backfillKeys } from "../src/packages.ts";
 import { startServer, type RunningServer } from "../src/server.ts";
 
 let root: string;
@@ -352,6 +353,7 @@ test("a plugin without zeploy.json: details are read, typed over, and a new vers
   assert.equal(added.status, 200, JSON.stringify(added.body));
   assert.equal(added.body.name, "Layer Tools");
   assert.deepEqual(added.body.keys, ["ae-script:layer tools.jsx"]);
+  assert.equal(added.body.usageHelper, false);
   await assert.rejects(stat(path), "the upload is gone once added");
 
   // The colosave panel as a bare folder, no zeploy.json: it was added with
@@ -372,6 +374,25 @@ test("a plugin without zeploy.json: details are read, typed over, and a new vers
   assert.deepEqual([next.body.id, next.body.version], ["colosave", "1.2.0"]);
   const again = await api("POST", "/api/packages/inspect", { path: panel, overrides: { version: "1.2.0" } });
   assert.equal(again.body.status, "same", "adding the same plugin twice is no conflict");
+});
+
+test("a package with the usage helper is marked at import, and an older record is marked at start", async () => {
+  const folder = join(root, "counted");
+  await write(
+    join(folder, "zeploy.json"),
+    JSON.stringify({ schemaVersion: 1, id: "counted", name: "Counted", version: "1.0.0", components: [{ type: "cep", source: "panel" }] }),
+  );
+  await writeCepPanel(join(folder, "panel"), "com.counted.panel");
+  await write(join(folder, "panel", "js", "zeploy-usage.js"), "// zeploy usage helper v1\nfunction zeployUsageV1() {}");
+  const added = await api("POST", "/api/packages/import", { path: folder });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.usageHelper, true);
+
+  // A record saved before zeploy looked for the helper.
+  const record = server.store.data.packages.find((p) => p.id === "counted")!;
+  delete record.usageHelper;
+  assert.equal(await backfillKeys(server.store), true);
+  assert.equal(record.usageHelper, true);
 });
 
 test("a PC reports a plugin it has without zeploy, and packages remember their source", async () => {

@@ -182,3 +182,41 @@ export async function listFiles(dir: string, prefix = ""): Promise<string[]> {
   }
   return out;
 }
+
+// Script files the usage helpers come as (examples/usage), and archives a
+// component may hold them in.
+const HELPER_FILE = /\.(js|jsx|jsfl|py|html?)$/i;
+const HELPER_ARCHIVE = /\.(zip|zxp|ccx)$/i;
+const HELPER_MARK = /zeployUsageV1|zeploy usage helper/;
+const MAX_SCAN_BYTES = 4 * 1024 * 1024;
+
+function archiveHasHelper(data: Uint8Array): boolean {
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = unzipSync(data, { filter: (f) => HELPER_FILE.test(f.name) && f.originalSize <= MAX_SCAN_BYTES });
+  } catch {
+    return false;
+  }
+  return Object.values(entries).some((bytes) => HELPER_MARK.test(new TextDecoder().decode(bytes)));
+}
+
+// Whether a package reports plugin usage: one of its scripts carries
+// zeploy's usage helper (docs/plugin-usage.md), found by the helper's
+// function name or its header. Archives (a Blender add-on .zip, a .zxp) are
+// looked into; a compiled .jsxbin cannot be.
+export async function hasUsageHelper(root: string, manifest: Manifest): Promise<boolean> {
+  for (const c of manifest.components) {
+    const full = join(root, c.source);
+    const info = await stat(full).catch(() => null);
+    if (!info) continue;
+    const files = info.isDirectory() ? (await listFiles(full)).map((rel) => join(full, rel)) : [full];
+    for (const file of files) {
+      if (HELPER_ARCHIVE.test(file)) {
+        if (archiveHasHelper(await readFile(file))) return true;
+      } else if (HELPER_FILE.test(file) && (await stat(file)).size <= MAX_SCAN_BYTES) {
+        if (HELPER_MARK.test(await readFile(file, "utf8"))) return true;
+      }
+    }
+  }
+  return false;
+}

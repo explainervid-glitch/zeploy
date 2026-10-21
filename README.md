@@ -248,6 +248,46 @@ installed stay installed.
   new `--server`.
 - **Log file:** `%LOCALAPPDATA%\zeploy\agent.log` of the user the agent runs as.
 
+### Uninstall the agent
+
+Plugins the agent installed stay installed. To remove them too, use
+[Remove from PCs](#remove-from-pcs) first, while the PC is online.
+
+1. On the team PC, in an administrator PowerShell, stop the agent and delete
+   its Scheduled Tasks (and, from 0.9.0, the waker's task and firewall rule):
+
+   ```bash
+   cd "C:\Program Files\zeploy"
+   ```
+
+   ```bash
+   .\zeploy-agent.exe remove
+   ```
+
+2. For a full uninstall, delete its files. This cannot be undone, and only
+   works once `remove` has stopped the agent:
+
+   ```bash
+   Remove-Item -Recurse -Force "C:\Program Files\zeploy", "C:\ProgramData\zeploy"
+   ```
+
+   This removes the exe, `agent.json` (team token and PC id) and
+   `waker.log`. Then, as the user the agent ran as:
+
+   ```bash
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\zeploy"
+   ```
+
+   This removes the install records, staging folder and `agent.log`. Without
+   the records zeploy no longer knows what it installed on that PC: its
+   plugins stay, and show as "Found" if the agent is installed again.
+
+3. In the admin app the PC goes offline. Hover its row and click **Forget**.
+   It comes back only if an agent connects from it again.
+
+To install it again, run the saved installer or `setup`. Without
+`agent.json` the PC gets a new id and shows as a new row.
+
 ### Upgrading from zdeploy
 
 zeploy was called zdeploy before. Nothing has to be set up again:

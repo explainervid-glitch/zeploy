@@ -532,6 +532,18 @@ test("plugin usage goes from the spool to the admin's totals, and stops when swi
     assert.deepEqual(plugin.agents["agent-usage-0001"], { opens: 1, uses: 2, last: plugin.last });
     assert.deepEqual(Object.values(plugin.perDay), [{ opens: 1, uses: 2, errors: 0 }], "one day, for the charts");
     await waitFor("spool deleted", async () => (await readdir(usageDir)).length === 0);
+
+    // Only some PCs: this one left out, then in.
+    assert.deepEqual((await api("GET", "/api/usage?days=7&agents=someone-else")).body.plugins, []);
+    assert.equal((await api("GET", "/api/usage?days=7&agents=agent-usage-0001")).body.plugins.length, 1);
+
+    // Deleting: another plugin's usage leaves this one; this PC's goes.
+    assert.equal((await api("DELETE", "/api/usage")).status, 400);
+    assert.equal((await api("DELETE", "/api/usage?agent=agent-usage-0001&plugin=other.plugin")).body.removed, 0);
+    assert.equal((await api("DELETE", "/api/usage?agent=agent-usage-0001&plugin=COM.colosave.panel")).body.removed, 1);
+    assert.deepEqual((await api("GET", "/api/usage?days=7")).body.plugins, []);
+    await write(join(usageDir, "com.colosave.panel.jsonl"), event({ ev: "open" }) + "\n");
+    await waitFor("usage again", async () => (await api("GET", "/api/usage?days=7")).body.plugins.length === 1);
     assert.equal((await api("GET", "/api/state")).body.usageEnabled, true);
 
     // Off: the PC deletes what plugins write and the totals stay as they were.

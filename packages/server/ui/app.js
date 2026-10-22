@@ -1135,6 +1135,50 @@ function renderSettings() {
   $("token-value").textContent = tokenShown ? state.enrollToken : "•".repeat(24);
   $("token-show").textContent = tokenShown ? "Hide" : "Show";
   $("usage-enabled").checked = state.usageEnabled;
+  renderUsageDelete();
+}
+
+// Settings: whose usage to delete, and of which plugin.
+function renderUsageDelete() {
+  const pcSelect = $("usage-delete-pc");
+  const plugin = $("usage-delete-plugin");
+  const keepPc = pcSelect.value;
+  const keepPlugin = plugin.value;
+  pcSelect.replaceChildren(
+    ...sortedAgents().map((a) => new Option(`${nameOf(a)}${a.role ? ` (${a.role})` : ""}`, a.id)),
+    new Option("Every PC", "*"),
+  );
+  plugin.replaceChildren(new Option("Every plugin", ""), ...latestPackages().map((p) => new Option(p.name, p.id)));
+  if ([...pcSelect.options].some((o) => o.value === keepPc)) pcSelect.value = keepPc;
+  if ([...plugin.options].some((o) => o.value === keepPlugin)) plugin.value = keepPlugin;
+}
+
+async function deleteUsage(event) {
+  event.preventDefault();
+  const agent = $("usage-delete-pc").value;
+  const pkgId = $("usage-delete-plugin").value;
+  const pkg = latestPackages().find((p) => p.id === pkgId);
+  const who = agent === "*" ? "every PC" : nameOf(state.agents.find((a) => a.id === agent) ?? { hostname: agent });
+  const what = pkg ? pkg.name : "every plugin";
+  const ok = await askConfirm({
+    title: `Delete usage of ${what} on ${who}?`,
+    body: "All collected days go, for good. New usage still comes in.",
+    action: "Delete",
+  });
+  if (!ok) return;
+  // A package's usage is stored under the plugin's own ids (its keys).
+  const plugins = pkg ? [...new Set([pkg.id, ...[...packageKeys(pkg)].map((k) => k.slice(k.indexOf(":") + 1))])] : [""];
+  try {
+    let removed = 0;
+    for (const plugin of plugins) {
+      const query = `agent=${encodeURIComponent(agent)}${plugin ? `&plugin=${encodeURIComponent(plugin)}` : ""}`;
+      removed += (await api("DELETE", `/api/usage?${query}`)).removed;
+    }
+    toast(removed ? `Deleted ${removed} day(s) of usage.` : "There was no usage to delete.");
+    if (view === "dashboard") void loadDashboard();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 // ---- Dashboard ----------------------------------------------------------------------------------
@@ -1159,8 +1203,52 @@ function packageForPlugin(id) {
   return latestPackages().find((p) => p.id === low || [...packageKeys(p)].some((k) => k.slice(k.indexOf(":") + 1) === low)) ?? null;
 }
 
+// The dashboard's role filter: the roles shown, by name ("No role" for PCs
+// without one); empty means every role. Remembered per browser.
+const NO_ROLE = "No role";
+const roleOf = (agent) => agent.role || NO_ROLE;
+let dashRoles = new Set(JSON.parse(remember.get("usageRoles") || "[]"));
+const inScope = (agent) => dashRoles.size === 0 || dashRoles.has(roleOf(agent));
+const scopedAgents = () => state.agents.filter(inScope);
+
+function setRoles(roles) {
+  dashRoles = new Set(roles);
+  remember.set("usageRoles", JSON.stringify([...dashRoles]));
+  void loadDashboard();
+}
+
 function installedOn(pkg) {
-  return state.agents.filter((a) => a.state?.receipts.some((r) => r.id === pkg.id) || foundOn(a, pkg)).length;
+  return scopedAgents().filter((a) => a.state?.receipts.some((r) => r.id === pkg.id) || foundOn(a, pkg)).length;
+}
+
+// Role toggles: "All roles", then one per role with its number of PCs.
+function renderRoleFilter() {
+  const counts = new Map();
+  for (const a of state.agents) counts.set(roleOf(a), (counts.get(roleOf(a)) ?? 0) + 1);
+  const roles = [...counts.keys()].sort((a, b) => (a === NO_ROLE) - (b === NO_ROLE) || a.localeCompare(b));
+  // A remembered role nobody has any more does not count.
+  for (const r of [...dashRoles]) if (!counts.has(r)) dashRoles.delete(r);
+  const el = $("dash-roles");
+  el.hidden = roles.length < 2;
+  const chip = (label, pressed, data, n) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "filter";
+    b.setAttribute("aria-pressed", String(pressed));
+    b.dataset.dashRole = data;
+    b.append(label);
+    if (n !== undefined) {
+      const count = document.createElement("span");
+      count.className = "n";
+      count.textContent = String(n);
+      b.append(" ", count);
+    }
+    return b;
+  };
+  el.replaceChildren(
+    chip("All roles", dashRoles.size === 0, ""),
+    ...roles.map((r) => chip(r, dashRoles.has(r), r, counts.get(r))),
+  );
 }
 
 // The oldest version of a package that carries the usage helper, or null.
@@ -1431,12 +1519,19 @@ function rankingTable(rows) {
 
 const box = (title, body, cls = "") => `<section class="box ${cls}"><h3 class="box-title">${title}</h3>${body}</section>`;
 
+// Only the PCs with the roles shown, when not every role is.
+function scopeParam() {
+  if (dashRoles.size === 0 || !state) return "";
+  return `&agents=${encodeURIComponent(scopedAgents().map((a) => a.id).join(","))}`;
+}
+
 function renderDashboard() {
+  renderRoleFilter();
   $("dash-period").innerHTML = DASH_PERIODS.map(
     (d) => `<button type="button" class="filter" data-dash-days="${d}" aria-pressed="${dashDays === d}">Last ${d} days</button>`,
   ).join("");
-  const reporting = state.agents.filter((a) => (a.features ?? []).includes("usage")).length;
-  $("dash-note").textContent = `${pcs(reporting)} of ${state.agents.length} can report usage (agent 0.8.0)`;
+  const reporting = scopedAgents().filter((a) => (a.features ?? []).includes("usage")).length;
+  $("dash-note").textContent = `${pcs(reporting)} of ${scopedAgents().length} can report usage (agent 0.8.0)`;
   const el = $("dash-body");
   // A reload keeps the last picture, dimmed, instead of flashing.
   el.classList.toggle("stale", dash.loading && !!dash.cur);
@@ -1470,7 +1565,7 @@ function renderDashboard() {
     `<div class="kpis">` +
     tile("Plugins used", String(used.length), `of ${all.length} reporting`, deltaHtml(used.length, prevUsed, true)) +
     tile("Uses", compact(uses), "", deltaHtml(uses, prevUses, true) + sparkline(daily)) +
-    tile("PCs using plugins", String(pcsUsing), `of ${state.agents.length}`) +
+    tile("PCs using plugins", String(pcsUsing), `of ${scopedAgents().length}`) +
     tile("Errors", compact(errors), "", deltaHtml(errors, prevErrors, false)) +
     `</div>`;
 
@@ -1513,7 +1608,8 @@ function renderDashboard() {
   // packages without the helper.
   const reportingIds = new Set(all.filter((r) => r.pkg).map((r) => r.pkg.id));
   const idle = all.filter((r) => r.pkg && !used.some((u) => u.key === r.key));
-  const unreported = latestPackages().filter((p) => !reportingIds.has(p.id));
+  // Only packages on the PCs of the roles shown.
+  const unreported = latestPackages().filter((p) => !reportingIds.has(p.id) && installedOn(p) > 0);
   const notYet = unreported.filter((p) => p.usageHelper);
   const silent = unreported.filter((p) => !p.usageHelper);
   const olderNote = (pkg) => {
@@ -1562,9 +1658,9 @@ async function loadDashboard() {
   renderDashboard();
   try {
     const [cur, wide, all] = await Promise.all([
-      api("GET", `/api/usage?days=${dashDays}`),
-      api("GET", `/api/usage?days=${Math.min(dashDays * 2, 180)}`),
-      api("GET", "/api/usage?days=180"),
+      api("GET", `/api/usage?days=${dashDays}${scopeParam()}`),
+      api("GET", `/api/usage?days=${Math.min(dashDays * 2, 180)}${scopeParam()}`),
+      api("GET", `/api/usage?days=180${scopeParam()}`),
     ]);
     Object.assign(dash, { cur, wide, all });
   } catch (err) {
@@ -1875,6 +1971,17 @@ $("tab-activity").addEventListener("click", () => {
 $("connect-pc").addEventListener("click", () => state && openConnect());
 $("open-settings").addEventListener("click", () => state && openSettings());
 $("view-pcs").addEventListener("click", () => showView("pcs"));
+$("usage-delete-form").addEventListener("submit", deleteUsage);
+// A role toggles on its own; "All roles" shows every role again.
+$("dash-roles").addEventListener("click", (event) => {
+  const role = event.target.closest?.("[data-dash-role]")?.dataset.dashRole;
+  if (role === undefined) return;
+  if (role === "") return setRoles([]);
+  const next = new Set(dashRoles);
+  if (next.has(role)) next.delete(role);
+  else next.add(role);
+  setRoles(next);
+});
 $("view-dashboard").addEventListener("click", () => showView("dashboard"));
 $("usage-enabled").addEventListener("change", async () => {
   const usage = $("usage-enabled").checked;

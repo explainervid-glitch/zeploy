@@ -818,7 +818,17 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         return json(res, 200, { ok: true });
       case "GET /api/usage": {
         const days = Math.min(Math.max(Number(q("days")) || 30, 1), 180);
-        return json(res, 200, { days, from: firstDay(days), plugins: usage.summary(days) });
+        // agents: a comma-separated list of PC ids to count; absent means every PC.
+        const only = url.searchParams.has("agents") ? new Set(q("agents").split(",").filter(Boolean)) : undefined;
+        return json(res, 200, { days, from: firstDay(days), plugins: usage.summary(days, new Date(), only) });
+      }
+      case "DELETE /api/usage": {
+        // agent: a PC id, or "*" for every PC; plugin: optional, one plugin only.
+        const agent = q("agent");
+        if (!agent) throw new HttpError(400, "say which PC: agent=<id>, or agent=* for every PC");
+        const removed = usage.remove(agent === "*" ? null : agent, q("plugin") || undefined);
+        log(`deleted ${removed} day(s) of plugin usage from ${agent === "*" ? "every PC" : (store.data.agents[agent]?.hostname ?? agent)}`);
+        return json(res, 200, { removed });
       }
       case "POST /api/settings": {
         const body = z.object({ usage: z.boolean() }).parse(await readJson(req));

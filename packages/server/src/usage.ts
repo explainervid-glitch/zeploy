@@ -86,13 +86,34 @@ export class UsageStore {
     this.save();
   }
 
-  // Everything from the last `days` days, today included, per plugin.
-  summary(days: number, now = new Date()): PluginUsage[] {
+  // Deletes what one PC reported (or every PC, with null), for every plugin
+  // or one. Returns how many daily rows went.
+  remove(agentId: string | null, plugin?: string): number {
+    let removed = 0;
+    const wanted = plugin?.toLowerCase();
+    for (const [day, perAgent] of Object.entries(this.#data.days)) {
+      for (const [id, rows] of Object.entries(perAgent)) {
+        if (agentId !== null && id !== agentId) continue;
+        const keep = wanted ? rows.filter((r) => r.plugin.toLowerCase() !== wanted) : [];
+        removed += rows.length - keep.length;
+        if (keep.length) perAgent[id] = keep;
+        else delete perAgent[id];
+      }
+      if (Object.keys(perAgent).length === 0) delete this.#data.days[day];
+    }
+    if (removed) this.save();
+    return removed;
+  }
+
+  // Everything from the last `days` days, today included, per plugin; only
+  // from the PCs in `agents` when given.
+  summary(days: number, now = new Date(), agents?: Set<string>): PluginUsage[] {
     const from = firstDay(days, now);
     const plugins = new Map<string, PluginUsage>();
     for (const [day, perAgent] of Object.entries(this.#data.days)) {
       if (day < from) continue;
       for (const [agentId, rows] of Object.entries(perAgent)) {
+        if (agents && !agents.has(agentId)) continue;
         for (const row of rows) {
           const key = row.plugin.toLowerCase();
           let p = plugins.get(key);

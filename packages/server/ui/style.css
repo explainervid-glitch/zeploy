@@ -590,6 +590,8 @@ dialog.sheet::backdrop { background: var(--scrim); }
 /* Dashboard */
 .main { position: relative; }
 .dash-note { margin-left: auto; }
+/* Role filter: one toggle per role, under the period. */
+.role-filter .n { font-weight: 400; }
 #dash-body { display: flex; flex-direction: column; gap: 14px; transition: opacity 0.15s; }
 #dash-body.stale { opacity: 0.5; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }

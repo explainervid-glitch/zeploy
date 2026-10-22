@@ -41,6 +41,7 @@
           <div id="dash-period" class="filters" role="group" aria-label="Period"></div>
           <span id="dash-note" class="muted small dash-note"></span>
         </div>
+        <div id="dash-roles" class="filters role-filter" role="group" aria-label="Roles"></div>
         <div id="dash-body"></div>
       </div>
       <div id="chart-tip" class="chart-tip" role="tooltip" hidden></div>
@@ -225,6 +226,12 @@
       <h3 class="section-title">Plugin usage</h3>
       <label class="check"><input type="checkbox" id="usage-enabled"> Collect plugin usage from PCs</label>
       <p class="muted small">Plugins with the zeploy usage helper count how often they are used, and PCs (agent 0.8.0) send daily totals per plugin: no user names, file names or project names. Switched off, PCs delete what plugins wrote. Tell the team either way.</p>
+      <form id="usage-delete-form" class="row">
+        <select id="usage-delete-pc" class="select grow" aria-label="Whose usage to delete"></select>
+        <select id="usage-delete-plugin" class="select grow" aria-label="Which plugin"></select>
+        <button type="submit" class="btn danger">Delete usage</button>
+      </form>
+      <p class="muted small">Deletes collected usage for good, such as tests on the admin PC. To only hide PCs, use the PC filter on the dashboard.</p>
     </div>
     <div class="sheet-foot">
       <button type="button" class="btn" data-close>Done</button>

@@ -657,6 +657,14 @@ token.
 Hover over a day or a bar for its number; the daily chart also has a table
 view.
 
+The role buttons under the period show only the PCs with those roles, on
+everything on the dashboard: click **Animator** and **Storyboard Artist** to
+see just those two; click a role again to drop it, and **All roles** to see
+every PC again. A role you leave unselected, such as the admin PC's, is
+hidden, not deleted, and the choice is remembered in this browser. To delete collected usage
+for good, use **Settings → Plugin usage → Delete usage**: one PC or every PC,
+one plugin or every plugin. New usage still comes in afterwards.
+
 To try it, add `examples\test-panel` (1.2.0) and install it on a PC with agent
 0.8.0: opening the panel and its **Try a feature** button are reported, and
 show on the dashboard within a minute. To see the dashboard with sample data

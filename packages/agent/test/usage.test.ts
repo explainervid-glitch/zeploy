@@ -203,6 +203,14 @@ test("the Blender helper writes lines the agent reads", async (t) => {
       "ok(); cancelled()",
       "u.action('\\u00ebxport')",
       "try:\n    boom()\nexcept ValueError:\n    pass",
+      // Blender refuses to register an operator whose methods take other arguments.
+      "class Op:",
+      "    @u.track('export')",
+      "    def execute(self, context): return {'CANCELLED'}",
+      "    @u.track('export')",
+      "    def invoke(self, context, event): return {'CANCELLED'}",
+      "assert (Op.execute.__code__.co_argcount, Op.invoke.__code__.co_argcount) == (2, 3)",
+      "Op().execute(None); Op().invoke(None, None)",
     ].join("\n"),
   );
   execFileSync(python, ["-I", script], { env: { ...process.env, LOCALAPPDATA: base } });

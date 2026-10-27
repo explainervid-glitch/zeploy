@@ -84,8 +84,7 @@ class Usage:
         """
 
         def decorate(fn):
-            @functools.wraps(fn)
-            def wrapper(*args, **kwargs):
+            def run(*args, **kwargs):
                 start = time.perf_counter()
                 try:
                     result = fn(*args, **kwargs)
@@ -96,6 +95,19 @@ class Usage:
                     self.action(name, (time.perf_counter() - start) * 1000)
                 return result
 
-            return wrapper
+            # Blender registers an operator only if execute/invoke/modal take
+            # exactly (self, context) or (self, context, event): the wrapper
+            # has as many arguments as the function it wraps.
+            count = getattr(getattr(fn, "__code__", None), "co_argcount", None)
+            if count == 2:
+                def wrapper(a, b):
+                    return run(a, b)
+            elif count == 3:
+                def wrapper(a, b, c):
+                    return run(a, b, c)
+            else:
+                def wrapper(*args, **kwargs):
+                    return run(*args, **kwargs)
+            return functools.wraps(fn)(wrapper)
 
         return decorate

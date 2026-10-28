@@ -1445,9 +1445,37 @@ function tile(label, value, sub, extra = "") {
   );
 }
 
-// Uses per day: one series of columns, the busiest day labelled, a hover
-// tooltip per day, and a table twin.
-function columnChart(days, values) {
+// ---- chart types ---------------------------------------------------------------------------
+// Each dashboard chart offers the types that fit its data, remembered per
+// chart: days as bars, a line or dots; plugins and roles as bars, a pie (share
+// of uses) or dots.
+
+const CHART_TYPES = {
+  daily: ["bar", "line", "dot"],
+  plugins: ["bar", "pie", "dot"],
+  roles: ["bar", "pie", "dot"],
+};
+const CHART_LABELS = { bar: "Bar", line: "Line", dot: "Dot", pie: "Pie" };
+
+function chartType(chart) {
+  const saved = remember.get(`chart:${chart}`);
+  return CHART_TYPES[chart].includes(saved) ? saved : CHART_TYPES[chart][0];
+}
+
+function chartSwitch(chart) {
+  const current = chartType(chart);
+  return (
+    `<span class="chart-switch" role="group" aria-label="Chart type">` +
+    CHART_TYPES[chart]
+      .map((t) => `<button type="button" data-chart="${chart}" data-chart-type="${t}" aria-pressed="${t === current}">${CHART_LABELS[t]}</button>`)
+      .join("") +
+    `</span>`
+  );
+}
+
+// Uses per day as columns, a line with its area, or a dot per day; the busiest
+// day labelled, a hover tooltip per day, and a table twin.
+function dailyChart(days, values, type) {
   const W = 760;
   const H = 190;
   const left = 40;
@@ -1460,26 +1488,35 @@ function columnChart(days, values) {
   const band = plotW / days.length;
   const colW = Math.max(2, Math.min(24, band - 2));
   const y = (v) => top + plotH - (v / max) * plotH;
+  const cx = (i) => left + i * band + band / 2;
   let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Uses per day over ${days.length} days">`;
   for (const t of [0, max / 2, max]) {
     svg += `<line class="grid" x1="${left}" x2="${W - right}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" />`;
     svg += `<text class="tick" x="${left - 6}" y="${(y(t) + 3).toFixed(1)}" text-anchor="end">${compact(t)}</text>`;
   }
+  if (type === "line") {
+    const pts = values.map((v, i) => `${cx(i).toFixed(1)},${y(v).toFixed(1)}`);
+    svg += `<polygon class="area" points="${cx(0).toFixed(1)},${top + plotH} ${pts.join(" ")} ${cx(values.length - 1).toFixed(1)},${top + plotH}" />`;
+    svg += `<polyline class="line" points="${pts.join(" ")}" />`;
+  }
   const peak = values.indexOf(Math.max(...values));
   const labelEvery = Math.ceil(days.length / 7);
   days.forEach((day, i) => {
     const v = values[i];
-    const x = left + i * band + (band - colW) / 2;
-    if (v > 0) {
+    if (type === "bar" && v > 0) {
+      const x = left + i * band + (band - colW) / 2;
       svg += `<rect class="col" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${colW.toFixed(1)}" height="${(top + plotH - y(v)).toFixed(1)}" />`;
+    } else if (type === "dot" || (type === "line" && (i === peak || i === days.length - 1))) {
+      // Dots for every day; on a line, the busiest and the latest day.
+      svg += `<circle class="dot-mark${v === 0 ? " zero" : ""}" cx="${cx(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${v === 0 ? 2.5 : 4}" />`;
     }
     if (i === peak && v > 0) {
-      svg += `<text class="peak" x="${(x + colW / 2).toFixed(1)}" y="${(y(v) - 5).toFixed(1)}" text-anchor="middle">${compact(v)}</text>`;
+      svg += `<text class="peak" x="${cx(i).toFixed(1)}" y="${(y(v) - 8).toFixed(1)}" text-anchor="middle">${compact(v)}</text>`;
     }
     if (i % labelEvery === 0) {
-      svg += `<text class="tick" x="${(left + i * band + band / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(shortDay(day))}</text>`;
+      svg += `<text class="tick" x="${cx(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(shortDay(day))}</text>`;
     }
-    // The whole day's band is the hover target, bigger than the column.
+    // The whole day's band is the hover target, bigger than the mark.
     svg +=
       `<rect class="hit" x="${(left + i * band).toFixed(1)}" y="${top}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" ` +
       `data-tip-value="${v} ${v === 1 ? "use" : "uses"}" data-tip-title="${esc(shortDay(day))}" aria-label="${esc(shortDay(day))}: ${v} uses" />`;
@@ -1492,11 +1529,15 @@ function columnChart(days, values) {
   return svg + table;
 }
 
-// Horizontal bars, longest first, the value at the tip.
-function hbars(items, max) {
+// Categories (plugins, roles) as horizontal bars, a dot on a hairline, or a
+// pie of `pie` values (each item's share of the whole). Items come sorted,
+// largest first.
+function categoryChart(items, type, pieUnit) {
   if (!items.length) return `<p class="empty-line">Nothing in this period.</p>`;
+  if (type === "pie") return pieChart(items, pieUnit);
+  const max = Math.max(1, ...items.map((it) => it.value));
   return (
-    `<div class="hbars">` +
+    `<div class="hbars${type === "dot" ? " dots" : ""}">` +
     items
       .map(
         (it) =>
@@ -1508,6 +1549,50 @@ function hbars(items, max) {
       .join("") +
     `</div>`
   );
+}
+
+// Five slices at most, in the categorical order, and the rest as "Other" in
+// gray; a 2px surface gap between slices; the legend names every slice with
+// its value and share, so no slice depends on colour alone.
+const PIE_SLICES = 5;
+
+function pieChart(items, unit) {
+  const total = items.reduce((n, it) => n + it.pie, 0);
+  if (total <= 0) return `<p class="empty-line">Nothing in this period.</p>`;
+  const head = items.slice(0, PIE_SLICES);
+  const rest = items.slice(head.length);
+  const slices = head.map((it, i) => ({ name: it.name, n: it.pie, cls: `cat-${i + 1}` }));
+  if (rest.length) slices.push({ name: `Other (${rest.length})`, n: rest.reduce((s, it) => s + it.pie, 0), cls: "cat-other" });
+  const shown = slices.filter((s) => s.n > 0);
+  const R = 70;
+  const C = 80;
+  const pct = (n) => `${Math.round((n / total) * 100)}%`;
+  let svg = `<svg class="pie" viewBox="0 0 160 160" role="img" aria-label="Share of ${unit}">`;
+  let angle = -Math.PI / 2;
+  for (const s of shown) {
+    const tip = `data-tip-title="${esc(s.name)}" data-tip-value="${esc(`${compact(s.n)} ${unit}, ${pct(s.n)}`)}"`;
+    if (shown.length === 1) {
+      svg += `<circle class="slice ${s.cls}" cx="${C}" cy="${C}" r="${R}" tabindex="0" ${tip} />`;
+      break;
+    }
+    const sweep = (s.n / total) * Math.PI * 2;
+    const end = angle + sweep;
+    const p = (a) => `${(C + R * Math.cos(a)).toFixed(2)} ${(C + R * Math.sin(a)).toFixed(2)}`;
+    svg += `<path class="slice ${s.cls}" d="M ${C} ${C} L ${p(angle)} A ${R} ${R} 0 ${sweep > Math.PI ? 1 : 0} 1 ${p(end)} Z" tabindex="0" ${tip} />`;
+    angle = end;
+  }
+  svg += `</svg>`;
+  const legend =
+    `<ul class="pie-legend">` +
+    shown
+      .map(
+        (s) =>
+          `<li><span class="swatch ${s.cls}" aria-hidden="true"></span><span class="pie-name" title="${esc(s.name)}">${esc(s.name)}</span>` +
+          `<span class="pie-val">${compact(s.n)}</span><span class="pie-pct">${pct(s.n)}</span></li>`,
+      )
+      .join("") +
+    `</ul>`;
+  return `<div class="pie-wrap">${svg}${legend}</div>`;
 }
 
 function usageDetails(r) {
@@ -1646,14 +1731,17 @@ function renderDashboard() {
   }
 
   const top = used.slice(0, 10);
-  const pluginBars = hbars(
+  // Bars and dots: PCs using each plugin. Pie: each plugin's share of uses.
+  const pluginBars = categoryChart(
     top.map((r) => ({
       name: r.name,
       value: r.usedOn,
+      pie: r.count,
       label: `${pcs(r.usedOn)} · ${compact(r.count)}`,
       tip: `${pcs(r.usedOn)}, ${r.count} ${r.byUses ? "uses" : "opens"}`,
     })),
-    Math.max(1, ...top.map((r) => r.usedOn)),
+    chartType("plugins"),
+    "uses",
   );
   const roleUses = new Map();
   const agents = new Map(state.agents.map((a) => [a.id, a]));
@@ -1664,9 +1752,10 @@ function renderDashboard() {
     }
   }
   const roles = [...roleUses].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-  const roleBars = hbars(
-    roles.map(([name, n]) => ({ name, value: n, label: compact(n), tip: `${n} uses` })),
-    Math.max(1, ...roles.map(([, n]) => n)),
+  const roleBars = categoryChart(
+    roles.map(([name, n]) => ({ name, value: n, pie: n, label: compact(n), tip: `${n} uses` })),
+    chartType("roles"),
+    "uses",
   );
 
   // Not used: plugins that reported before but not in the period, and
@@ -1716,10 +1805,13 @@ function renderDashboard() {
 
   el.innerHTML =
     kpis +
-    box("Uses per day", columnChart(days, daily)) +
+    box(`Uses per day${chartSwitch("daily")}`, dailyChart(days, daily, chartType("daily"))) +
     `<div class="two-up">` +
-    box(`Most used plugins <span class="muted">· PCs using each</span>`, pluginBars) +
-    box("Uses per role", roleBars) +
+    box(
+      `Most used plugins <span class="muted">· ${chartType("plugins") === "pie" ? "share of uses" : "PCs using each"}</span>${chartSwitch("plugins")}`,
+      pluginBars,
+    ) +
+    box(`Uses per role${chartSwitch("roles")}`, roleBars) +
     `</div>` +
     `<div class="two-up">` +
     box(`Not used in the last ${dashDays} days`, idleList) +
@@ -2000,7 +2092,10 @@ document.addEventListener("click", async (event) => {
     else if (d.showLog) await showLog(d.showLog);
     else if (d.copyLog !== undefined) await copy($("log-text").textContent, "Log copied");
     else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
-    else if (d.dashDays) {
+    else if (d.chartType) {
+      remember.set(`chart:${d.chart}`, d.chartType);
+      renderDashboard();
+    } else if (d.dashDays) {
       dashDays = Number(d.dashDays);
       remember.set("usageDays", String(dashDays));
       await loadDashboard();

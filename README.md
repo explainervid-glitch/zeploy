@@ -661,8 +661,15 @@ An error is the name the plugin gives it: the feature that failed (such as
 Plugins send no error messages, so the PCs and versions are what narrow it
 down; the message is in the plugin's own log or console on that PC.
 
-Hover over a day or a bar for its number; the daily chart also has a table
-view.
+Hover over a day, a bar or a slice for its number; the daily chart also has
+a table view.
+
+Each chart has a type switch at the right of its title, remembered in this
+browser. **Uses per day**: Bar, Line or Dot. **Most used plugins** and
+**Uses per role**: Bar, Pie or Dot. The pie shows each one's share of uses,
+with the five largest in colour and the rest as "Other", and a legend with
+every value. There is no pie of days and no line between plugins: a pie of
+days has no whole to share, and a line between plugins would read as a trend.
 
 The role buttons under the period show only the PCs with those roles, on
 everything on the dashboard: click **Animator** and **Storyboard Artist** to

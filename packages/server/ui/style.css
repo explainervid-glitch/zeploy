@@ -27,6 +27,12 @@
   /* Chart marks: one data hue, checked against the surface for both modes
      (lightness band, chroma floor, 3:1 contrast). */
   --chart: #1FA2D6;
+  /* Pie slices, in this order (validated as a set, the wrap-round pair too). */
+  --cat-1: #3987e5;
+  --cat-2: #d95926;
+  --cat-3: #199e70;
+  --cat-4: #c98500;
+  --cat-5: #d55181;
   --bar: 28px;
   color-scheme: dark;
 }
@@ -51,6 +57,11 @@
     --shadow: rgba(28, 30, 31, 0.25);
     --edge: 62%;
     --chart: #0F78B4;
+    --cat-1: #2a78d6;
+    --cat-2: #eb6834;
+    --cat-3: #1baf7a;
+    --cat-4: #eda100;
+    --cat-5: #e87ba4;
     color-scheme: light;
   }
 }
@@ -628,6 +639,41 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .chart .tick { fill: var(--muted); font: 10px var(--mono); }
 .chart .peak { fill: var(--text); font: 11px var(--mono); font-weight: 700; }
 .chart .col { fill: var(--chart); }
+.chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .area { fill: color-mix(in oklab, var(--chart) 10%, transparent); }
+.chart .dot-mark { fill: var(--chart); stroke: var(--bg); stroke-width: 2; }
+.chart .dot-mark.zero { fill: var(--line2); }
+
+/* Chart type switch, at the right of a chart's title. */
+.box-title { display: flex; align-items: center; gap: 8px; }
+.chart-switch { margin-left: auto; display: inline-flex; border: 1px solid var(--line2); }
+.chart-switch button { height: 20px; padding: 0 7px; border: 0; background: transparent; color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.chart-switch button + button { border-left: 1px solid var(--line2); }
+.chart-switch button:hover { color: var(--text); background: var(--raised); }
+.chart-switch button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 700; }
+
+/* Dot plot: a hairline with the value as a dot. */
+.hbars.dots .hbar-track { position: relative; }
+.hbars.dots .hbar { height: 1px; background: var(--line2); position: relative; overflow: visible; }
+.hbars.dots .hbar::after { content: ""; position: absolute; right: -5px; top: -4.5px; width: 10px; height: 10px; border-radius: 50% !important; background: var(--chart); box-shadow: 0 0 0 2px var(--bg); }
+
+/* Pie with its legend. */
+.pie-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.pie { width: 150px; height: 150px; flex: none; }
+.pie .slice { stroke: var(--bg); stroke-width: 2; stroke-linejoin: round; outline: none; }
+.pie .slice.tip-on, .pie .slice:focus-visible { filter: brightness(1.15); }
+.cat-1 { fill: var(--cat-1); background: var(--cat-1); }
+.cat-2 { fill: var(--cat-2); background: var(--cat-2); }
+.cat-3 { fill: var(--cat-3); background: var(--cat-3); }
+.cat-4 { fill: var(--cat-4); background: var(--cat-4); }
+.cat-5 { fill: var(--cat-5); background: var(--cat-5); }
+.cat-other { fill: var(--line2); background: var(--line2); }
+.pie-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 160px; min-width: 0; font-size: 12px; }
+.pie-legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 4ch; align-items: center; gap: 8px; padding: 3px 0; }
+.pie-legend .swatch { width: 10px; height: 10px; }
+.pie-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pie-val { text-align: right; }
+.pie-pct { text-align: right; color: var(--muted); }
 .chart .hit { fill: transparent; cursor: default; }
 .chart .hit:focus-visible { outline: none; fill: color-mix(in oklab, var(--chart) 12%, transparent); }
 .chart .hit.tip-on { fill: color-mix(in oklab, var(--text) 6%, transparent); }

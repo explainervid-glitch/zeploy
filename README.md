@@ -650,9 +650,16 @@ token.
 - uses per day, the most used plugins (on how many PCs), and uses per role;
 - plugins that report usage but were not used, and packages that do not
   report usage yet;
+- every error in the period: plugin, error, how often, on which PCs, the
+  plugin versions those PCs used that day, and the last day it happened;
 - every plugin in a table: used on how many of the PCs that have it, uses,
   opens, errors and last use. Click one for its features (with their average
-  duration), roles, the PCs using it most, and its versions.
+  duration), roles, the PCs using it most, its versions, and its errors.
+
+An error is the name the plugin gives it: the feature that failed (such as
+`export`), or a short kind the plugin chose (such as `export-no-ffmpeg`).
+Plugins send no error messages, so the PCs and versions are what narrow it
+down; the message is in the plugin's own log or console on that PC.
 
 Hover over a day or a bar for its number; the daily chart also has a table
 view.
@@ -721,7 +728,8 @@ Open the firewall on each admin computer as in step 1 of this guide.
 
 ### Other actions
 
-- **Activity** lists every job. Click one to see its log.
+- **Activity** lists today's jobs, and any still queued or running from
+  before. Click one to see its log.
 - **Remove from repository** (under a package name) deletes that version from
   the admin app. Plugins already installed on PCs stay installed.
 - **Edit** (next to a PC's name) sets two things shown only in zeploy:

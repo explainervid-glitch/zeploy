@@ -26,10 +26,14 @@ export interface PluginUsage {
   uses: number;
   actions: Record<string, { n: number; ms: number }>;
   errors: number;
+  // Errors by the name the plugin gives them (a feature or a short error
+  // kind): how many, on which PCs (agent ids), the plugin versions those PCs
+  // used on the days with errors, and the last such day.
+  errorKinds: Record<string, { n: number; agents: string[]; versions: string[]; lastDay: string }>;
   versions: Record<string, number>;
   last: string;
   // Per PC, by agent id.
-  agents: Record<string, { opens: number; uses: number; last: string }>;
+  agents: Record<string, { opens: number; uses: number; errors: number; last: string }>;
   // Per day ("2026-10-20"), for charts.
   perDay: Record<string, { opens: number; uses: number; errors: number }>;
 }
@@ -118,7 +122,7 @@ export class UsageStore {
           const key = row.plugin.toLowerCase();
           let p = plugins.get(key);
           if (!p) {
-            p = { plugin: row.plugin, apps: [], opens: 0, uses: 0, actions: {}, errors: 0, versions: {}, last: "", agents: {}, perDay: {} };
+            p = { plugin: row.plugin, apps: [], opens: 0, uses: 0, actions: {}, errors: 0, errorKinds: {}, versions: {}, last: "", agents: {}, perDay: {} };
             plugins.set(key, p);
           }
           const uses = Object.values(row.actions).reduce((n, a) => n + a.n, 0);
@@ -132,15 +136,23 @@ export class UsageStore {
           }
           const errors = Object.values(row.errors).reduce((n, v) => n + v, 0);
           p.errors += errors;
+          for (const [name, n] of Object.entries(row.errors)) {
+            const k = (p.errorKinds[name] ??= { n: 0, agents: [], versions: [], lastDay: "" });
+            k.n += n;
+            if (!k.agents.includes(agentId)) k.agents.push(agentId);
+            for (const v of Object.keys(row.versions)) if (!k.versions.includes(v)) k.versions.push(v);
+            if (day > k.lastDay) k.lastDay = day;
+          }
           const d = (p.perDay[day] ??= { opens: 0, uses: 0, errors: 0 });
           d.opens += row.opens;
           d.uses += uses;
           d.errors += errors;
           addRecord(p.versions, row.versions);
           if (row.last > p.last) p.last = row.last;
-          const a = (p.agents[agentId] ??= { opens: 0, uses: 0, last: "" });
+          const a = (p.agents[agentId] ??= { opens: 0, uses: 0, errors: 0, last: "" });
           a.opens += row.opens;
           a.uses += uses;
+          a.errors += errors;
           if (row.last > a.last) a.last = row.last;
         }
       }

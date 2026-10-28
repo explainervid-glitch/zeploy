@@ -288,9 +288,9 @@ function rowsByRole(agents, pkgs) {
       const members = agents.filter((a) => (a.role ?? "") === role);
       const online = members.filter((a) => a.online).length;
       html +=
-        `<tr class="role-row"><th scope="rowgroup" colspan="${pkgs.length + 1}">` +
+        `<tr class="role-row"><th scope="rowgroup" colspan="${pkgs.length + 1}"><span class="role-in">` +
         `<span class="role-name">${esc(role || "No role")}</span>` +
-        `<span class="role-count">${pcs(members.length)}, ${online} online</span></th></tr>`;
+        `<span class="role-count">${pcs(members.length)}, ${online} online</span></span></th></tr>`;
     }
     html += rowHtml(agent, pkgs);
   }
@@ -537,6 +537,10 @@ function renderMatrix() {
   const body = visible.length
     ? rowsByRole(visible, pkgs)
     : `<tr><td class="none-match" colspan="${pkgs.length + 1}">No PCs match.</td></tr>`;
+  // The table scrolls inside its box (so the PC column and package headers
+  // stay put); a re-render keeps where it was scrolled to.
+  const old = el.querySelector(".matrix");
+  const scroll = old ? [old.scrollLeft, old.scrollTop] : null;
   el.innerHTML =
     `<div class="matrix"><table class="grid" style="--pkgs:${pkgs.length}">` +
     `<thead><tr class="groups"><th class="corner" scope="col" rowspan="2"><span class="vh">PC</span></th>${groupHead(pkgs)}</tr>` +
@@ -546,6 +550,10 @@ function renderMatrix() {
       ? ""
       : `<div class="empty"><h2>No packages yet</h2><p>Add a plugin folder with zeploy.json. Its column appears here, and you pick the PCs to install it on.</p>` +
         `<button type="button" class="btn primary" data-open="add">Add package</button></div>`);
+  const frame = el.querySelector(".matrix");
+  // The package names stick just below the app groups row.
+  frame.style.setProperty("--groups-h", `${el.querySelector("tr.groups")?.offsetHeight ?? 0}px`);
+  if (scroll) [frame.scrollLeft, frame.scrollTop] = scroll;
 }
 
 // Selected cells that still exist, in table order, with what applying does.
@@ -605,13 +613,16 @@ function renderJobs() {
   const active = state.jobs.filter((j) => ACTIVE.has(j.status)).length;
   $("activity-count").textContent = active ? String(active) : "";
   const list = $("jobs");
-  if (state.jobs.length === 0) {
-    list.innerHTML = `<li class="empty-line">Nothing has run yet.</li>`;
+  // Today's jobs, and any still waiting or running from before.
+  const today = localDayKey(0);
+  const jobs = state.jobs.filter((j) => ACTIVE.has(j.status) || dayKeyOf(new Date(j.finishedAt ?? j.createdAt)) === today);
+  if (jobs.length === 0) {
+    list.innerHTML = `<li class="empty-line">${state.jobs.length ? "Nothing has run today." : "Nothing has run yet."}</li>`;
     return;
   }
   const agents = new Map(state.agents.map((a) => [a.id, nameOf(a)]));
   const names = new Map(state.packages.map((p) => [p.id, p.name]));
-  list.innerHTML = state.jobs
+  list.innerHTML = jobs
     .map((j) => {
       const cancelled = isCancelled(j);
       const partly = j.status === "done" && j.partial?.length;
@@ -1286,7 +1297,7 @@ function usageRows(data) {
     const key = pkg ? `pkg:${pkg.id}` : `id:${u.plugin.toLowerCase()}`;
     let r = rows.get(key);
     if (!r) {
-      r = { key, pkg, name: pkg?.name ?? u.plugin, ids: [], opens: 0, uses: 0, errors: 0, last: "", actions: {}, versions: {}, agents: {}, perDay: {} };
+      r = { key, pkg, name: pkg?.name ?? u.plugin, ids: [], opens: 0, uses: 0, errors: 0, errorKinds: {}, last: "", actions: {}, versions: {}, agents: {}, perDay: {} };
       rows.set(key, r);
     }
     r.ids.push(u.plugin);
@@ -1300,10 +1311,18 @@ function usageRows(data) {
       t.ms += a.ms;
     }
     for (const [v, n] of Object.entries(u.versions)) r.versions[v] = (r.versions[v] ?? 0) + n;
+    for (const [name, k] of Object.entries(u.errorKinds ?? {})) {
+      const t = (r.errorKinds[name] ??= { n: 0, agents: [], versions: [], lastDay: "" });
+      t.n += k.n;
+      t.agents = [...new Set([...t.agents, ...k.agents])];
+      t.versions = [...new Set([...t.versions, ...k.versions])];
+      if (k.lastDay > t.lastDay) t.lastDay = k.lastDay;
+    }
     for (const [id, a] of Object.entries(u.agents)) {
-      const t = (r.agents[id] ??= { opens: 0, uses: 0, last: "" });
+      const t = (r.agents[id] ??= { opens: 0, uses: 0, errors: 0, last: "" });
       t.opens += a.opens;
       t.uses += a.uses;
+      t.errors += a.errors ?? 0;
       if (a.last > t.last) t.last = a.last;
     }
     for (const [day, d] of Object.entries(u.perDay ?? {})) {
@@ -1335,6 +1354,50 @@ function dayList(from, n) {
 }
 
 const shortDay = (day) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+// "today", "yesterday" or "27 Oct" for a "2026-10-27".
+function dayWord(day) {
+  return day === localDayKey(0) ? "today" : day === localDayKey(-1) ? "yesterday" : shortDay(day);
+}
+
+// "2026-10-28": the local day of `d`, or of today plus some days.
+function dayKeyOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function localDayKey(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return dayKeyOf(d);
+}
+
+// Errors a plugin reported, one row per error name, most first. The name is
+// the plugin's own (the feature that failed, or a short error kind): plugins
+// send no messages, so the PCs and versions are what narrow it down.
+function errorRows(r) {
+  const agents = new Map(state.agents.map((a) => [a.id, a]));
+  return Object.entries(r.errorKinds ?? {})
+    .sort((a, b) => b[1].n - a[1].n)
+    .map(([name, k]) => {
+      const names = k.agents.map((id) => (agents.get(id) ? nameOf(agents.get(id)) : "Forgotten PC")).sort((a, b) => a.localeCompare(b));
+      return { name, n: k.n, pcNames: names, versions: [...k.versions].sort((a, b) => compareSemver(b, a)), lastDay: k.lastDay };
+    });
+}
+
+function errorTable(rows, withPlugin) {
+  return (
+    `<table class="mini errors"><thead><tr>${withPlugin ? "<th>Plugin</th>" : ""}<th>Error</th><th class="num">Count</th><th>PCs</th><th>Versions</th><th class="num">Last</th></tr></thead><tbody>` +
+    rows
+      .map(
+        (e) =>
+          `<tr>${withPlugin ? `<td>${esc(e.plugin)}</td>` : ""}<td class="err-name">${esc(e.name)}</td><td class="num err">${e.n}</td>` +
+          `<td class="wrap" title="${esc(e.pcNames.join(", "))}">${esc(listText(e.pcNames))}</td>` +
+          `<td class="wrap code">${esc(e.versions.join(", ")) || "–"}</td><td class="num muted">${esc(dayWord(e.lastDay))}</td></tr>`,
+      )
+      .join("") +
+    `</tbody></table>`
+  );
+}
 
 // 1,284 / 12.9K / 4.2M
 function compact(n) {
@@ -1490,6 +1553,9 @@ function usageDetails(r) {
       [...byRole].sort((a, b) => b[1].n - a[1].n).map(([role, t]) => [esc(role), t.n, t.pcs]),
     ) +
     section("Versions", ["Version", "Events"], versions.map(([v, n]) => [`<span class="code">${esc(v)}</span>`, n])) +
+    (r.errors
+      ? `<div class="usage-col usage-errors"><h4>Errors</h4>${errorTable(errorRows(r), false)}</div>`
+      : "") +
     `</div>`
   );
 }
@@ -1638,6 +1704,16 @@ function renderDashboard() {
       `<p class="muted small">Their ${esc(silent.length === 1 ? "version has" : "versions have")} no usage helper yet (docs/plugin-usage-prompt.md).</p>`
     : `<p class="empty-line">Every package reports usage.</p>`;
 
+  // Every error in the period, by plugin and error name.
+  const allErrors = rows
+    .flatMap((r) => errorRows(r).map((e) => ({ ...e, plugin: r.name })))
+    .sort((a, b) => b.n - a.n || b.lastDay.localeCompare(a.lastDay));
+  const errorList = allErrors.length
+    ? errorTable(allErrors, true) +
+      `<p class="muted small">The error is the name the plugin gives it: the feature that failed, or a short kind. ` +
+      `Plugins send no messages; the PC's own log or the plugin's console has those.</p>`
+    : `<p class="empty-line">No errors reported in the last ${dashDays} days.</p>`;
+
   el.innerHTML =
     kpis +
     box("Uses per day", columnChart(days, daily)) +
@@ -1649,6 +1725,7 @@ function renderDashboard() {
     box(`Not used in the last ${dashDays} days`, idleList) +
     box("Not reporting usage", silentList) +
     `</div>` +
+    box(`Errors <span class="muted">· ${compact(allErrors.reduce((n, e) => n + e.n, 0))} in the last ${dashDays} days</span>`, errorList) +
     box("All plugins", rankingTable(rows));
 }
 

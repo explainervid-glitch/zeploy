@@ -508,7 +508,12 @@ test("plugin usage goes from the spool to the admin's totals, and stops when swi
     JSON.stringify({ v: 1, t: new Date().toISOString(), plugin: "com.colosave.panel", ver: "1.0.0", app: "aftereffects", ...fields });
   await write(
     join(usageDir, "com.colosave.panel.jsonl"),
-    [event({ ev: "open" }), event({ ev: "action", name: "export", ms: 200 }), event({ ev: "action", name: "export", ms: 100 })].join("\n") + "\n",
+    [
+      event({ ev: "open" }),
+      event({ ev: "action", name: "export", ms: 200 }),
+      event({ ev: "action", name: "export", ms: 100 }),
+      event({ ev: "error", name: "export" }),
+    ].join("\n") + "\n",
   );
   const pc = startAdmins({
     servers: [`http://127.0.0.1:${server.port}`],
@@ -529,8 +534,12 @@ test("plugin usage goes from the spool to the admin's totals, and stops when swi
     assert.equal(plugin.opens, 1);
     assert.equal(plugin.uses, 2);
     assert.deepEqual(plugin.actions, { export: { n: 2, ms: 300 } });
-    assert.deepEqual(plugin.agents["agent-usage-0001"], { opens: 1, uses: 2, last: plugin.last });
-    assert.deepEqual(Object.values(plugin.perDay), [{ opens: 1, uses: 2, errors: 0 }], "one day, for the charts");
+    assert.deepEqual(plugin.agents["agent-usage-0001"], { opens: 1, uses: 2, errors: 1, last: plugin.last });
+    assert.deepEqual(Object.values(plugin.perDay), [{ opens: 1, uses: 2, errors: 1 }], "one day, for the charts");
+    // Which error, on which PCs and versions, and when last.
+    assert.deepEqual(plugin.errorKinds, {
+      export: { n: 1, agents: ["agent-usage-0001"], versions: ["1.0.0"], lastDay: Object.keys(plugin.perDay)[0] },
+    });
     await waitFor("spool deleted", async () => (await readdir(usageDir)).length === 0);
 
     // Only some PCs: this one left out, then in.

@@ -273,7 +273,21 @@ body.side-collapsed .side-strip:hover { background: var(--raised); color: var(--
 
 /* ---- matrix -------------------------------------------------------------------- */
 
-.matrix { border: 1px solid var(--line2); overflow-x: auto; }
+/* Scrolls on its own, both ways, so the package headers (top) and the PC
+   names (left) stay in view. Sticky cells need an opaque background, and
+   their edges are drawn as shadows: collapsed borders do not move with them. */
+.matrix {
+  border: 1px solid var(--line2);
+  overflow: auto;
+  max-height: calc(100vh - 47px - var(--bar, 0px) - 120px);
+  min-height: 160px;
+}
+.grid thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.grid thead tr:not(.groups) th { top: var(--groups-h, 30px); box-shadow: inset 0 -1px var(--line2); }
+.grid .corner { left: 0; z-index: 4; box-shadow: inset -1px -1px var(--line2); }
+.grid .rowhead { position: sticky; left: 0; z-index: 1; background: var(--bg); box-shadow: inset -1px 0 var(--line2); }
+.grid tbody tr:hover .rowhead { background: color-mix(in oklab, var(--raised) 60%, var(--bg)); }
+.grid .role-row .role-in { position: sticky; left: 16px; display: inline-flex; align-items: baseline; }
 .grid {
   width: 100%;
   min-width: calc(220px + var(--pkgs, 0) * 120px);
@@ -675,6 +689,14 @@ table.mini td { padding: 3px 0; border-bottom: 1px dashed var(--line); white-spa
 table.mini tr:last-child td { border-bottom: 0; }
 table.mini td:first-child { overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 100%; }
 table.mini .num { padding-left: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Errors: full width, PCs and versions wrap. */
+.usage-errors { grid-column: 1 / -1; }
+table.mini.errors td:first-child { max-width: none; width: auto; }
+table.mini.errors th, table.mini.errors td { padding-right: 14px; vertical-align: top; }
+table.mini.errors td.wrap { white-space: normal; }
+table.mini.errors td.err { color: var(--err); font-weight: 700; }
+table.mini.errors td.err-name { color: var(--err); }
+table.mini.errors + p { margin: 10px 0 0; }
 
 /* Settings */
 .section-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }

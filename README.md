@@ -493,7 +493,7 @@ plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 ### Read the table
 
-There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app.
+There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app. Drag the right edge of the **PC \ PACKAGE** header to make the PC column wider or narrower, so long names, the status and the row buttons fit (double-click it to reset; the width is remembered in this browser).
 
 | Mark | Means |
 | --- | --- |

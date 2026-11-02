@@ -510,6 +510,56 @@ function groupHead(pkgs) {
   return groups.map((g) => `<th scope="colgroup" colspan="${g.n}" class="group" title="${esc(g.title)}">${esc(g.label)}</th>`).join("");
 }
 
+// ---- PC column width ---------------------------------------------------------------------
+// The PC column of the table is as wide as you drag it (remembered per
+// browser), so long names, the status and the row's buttons all fit. The
+// width is set on #matrix, which outlives the table's re-renders.
+
+const PC_COL_DEFAULT = 220;
+const PC_COL_MIN = 160;
+const PC_COL_MAX = 560;
+let pcColWidth = Math.min(Math.max(Number(remember.get("pcColWidth")) || PC_COL_DEFAULT, PC_COL_MIN), PC_COL_MAX);
+
+function setPcColWidth(width, save = true) {
+  pcColWidth = Math.round(Math.min(Math.max(width, PC_COL_MIN), PC_COL_MAX));
+  $("matrix").style.setProperty("--pc-w", `${pcColWidth}px`);
+  document.querySelector(".col-resizer")?.setAttribute("aria-valuenow", String(pcColWidth));
+  if (save) remember.set("pcColWidth", String(pcColWidth));
+}
+
+$("matrix").addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest?.(".col-resizer");
+  if (!handle || event.button !== 0) return;
+  event.preventDefault();
+  const startX = event.clientX;
+  const startWidth = pcColWidth;
+  document.body.classList.add("resizing-col");
+  const move = (e) => setPcColWidth(startWidth + e.clientX - startX, false);
+  const end = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", end);
+    document.removeEventListener("pointercancel", end);
+    document.body.classList.remove("resizing-col");
+    setPcColWidth(pcColWidth);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", end);
+  document.addEventListener("pointercancel", end);
+});
+$("matrix").addEventListener("dblclick", (event) => {
+  if (event.target.closest?.(".col-resizer")) setPcColWidth(PC_COL_DEFAULT);
+});
+$("matrix").addEventListener("keydown", (event) => {
+  if (!event.target.closest?.(".col-resizer")) return;
+  const step = { ArrowRight: 20, ArrowLeft: -20 }[event.key];
+  if (step) setPcColWidth(pcColWidth + step);
+  else if (event.key === "Home") setPcColWidth(PC_COL_MIN);
+  else if (event.key === "End") setPcColWidth(PC_COL_MAX);
+  else return;
+  event.preventDefault();
+});
+setPcColWidth(pcColWidth, false);
+
 function renderMatrix() {
   const el = $("matrix");
   if (state.agents.length === 0) {
@@ -543,7 +593,10 @@ function renderMatrix() {
   const scroll = old ? [old.scrollLeft, old.scrollTop] : null;
   el.innerHTML =
     `<div class="matrix"><table class="grid" style="--pkgs:${pkgs.length}">` +
-    `<thead><tr class="groups"><th class="corner" scope="col" rowspan="2"><span class="vh">PC</span></th>${groupHead(pkgs)}</tr>` +
+    `<thead><tr class="groups"><th class="corner" scope="col" rowspan="2"><span class="vh">PC</span>` +
+    `<span class="col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the PC column" tabindex="0" ` +
+    `aria-valuemin="${PC_COL_MIN}" aria-valuemax="${PC_COL_MAX}" aria-valuenow="${pcColWidth}" title="Drag to resize, double-click to reset"></span></th>` +
+    `${groupHead(pkgs)}</tr>` +
     `<tr>${head}</tr></thead>` +
     `<tbody>${body}</tbody></table></div>` +
     (pkgs.length

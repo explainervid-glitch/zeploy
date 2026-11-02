@@ -301,14 +301,20 @@ body.side-collapsed .side-strip:hover { background: var(--raised); color: var(--
 .grid .role-row .role-in { position: sticky; left: 16px; display: inline-flex; align-items: baseline; }
 .grid {
   width: 100%;
-  min-width: calc(220px + var(--pkgs, 0) * 120px);
+  min-width: calc(var(--pc-w, 220px) + var(--pkgs, 0) * 120px);
   border-collapse: collapse;
   table-layout: fixed;
 }
 .grid th, .grid td { padding: 0; border-bottom: 1px dashed var(--line); }
 .grid tbody tr:last-child > * { border-bottom: 0; }
 .grid thead th { border-bottom: 1px solid var(--line2); }
-.grid .corner { width: 220px; text-align: left; padding: 0 16px; font-weight: 400; color: var(--muted); }
+.grid .corner { width: var(--pc-w, 220px); text-align: left; padding: 0 16px; font-weight: 400; color: var(--muted); }
+/* Drag the PC column's right edge to widen it (arrow keys on it work too). */
+.col-resizer { position: absolute; top: 0; right: -4px; bottom: 0; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
+.col-resizer::after { content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px; width: 2px; background: var(--line2); }
+.col-resizer:hover::after, .col-resizer:focus-visible::after, body.resizing-col .col-resizer::after { top: 0; bottom: 0; background: var(--accent); }
+.col-resizer:focus-visible { outline: 0; }
+body.resizing-col { cursor: col-resize; user-select: none; }
 .grid .corner::before { content: "PC \\ PACKAGE"; font-size: 11px; letter-spacing: 0.06em; }
 
 /* App groups above the package columns. */

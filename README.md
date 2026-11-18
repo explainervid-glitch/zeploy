@@ -802,7 +802,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | `no Animate Configuration folder ...; open Animate once so it creates one` | Start Animate once on that PC, then install again |
 | `no compatible Blender for ...` | That PC has no Blender version inside the package's range |
 | `zeploy installs into Blender 5.0 and later; this PC has only Blender ...` | Install Blender 5.0 or later on that PC, then install again |
-| `spawn ...\blender.exe ENOENT` | A Blender version zeploy installed into was uninstalled or moved. Update that PC to agent 0.10.0, which deletes the add-on from that version's user folder instead of running it, then install again |
+| `spawn ...\blender.exe ENOENT` | A Blender version zeploy installed into was uninstalled or moved. Update that PC to agent 0.10.1, which deletes the add-on from that version's user folder instead of running it, then install again |
 | `agent disconnected during the job` | The PC went offline mid-job. Check the PC, then install again |
 | `admin server restarted during the job` | The admin app closed mid-job. Install again |
 
@@ -1034,8 +1034,8 @@ Done:
   folder (0.4.0); partial Blender installs (0.5.0); Illustrator (0.6.0);
   several admin computers (0.7.0); plugin usage (0.8.0); idle and error
   PC status with the waker, Wake up and Show log (0.9.0); Blender 5.0 and
-  later only, and a Blender that was uninstalled no longer blocks updates
-  and uninstalls (0.10.0).
+  later only (0.10.0); a Blender that was uninstalled no longer blocks
+  updates and uninstalls (0.10.1).
 
 Planned for phase 3:
 

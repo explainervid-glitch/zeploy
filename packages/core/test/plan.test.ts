@@ -202,6 +202,71 @@ test("blender: no compatible version is an error that names what is installed", 
   await assert.rejects(planInstall(ctx(root, env, [{ type: "blender", source: "ext.zip" }])), /installed: 3\.6, 4\.1/);
 });
 
+test("blender: a PC with only Blender older than 5.0 says so", async () => {
+  const root = await makeTmp();
+  await writeFile(join(root, "ext.zip"), blenderExtensionZip("my_ext"));
+  const env = { ...blenderEnv(root, []), blenderTooOld: ["4.2", "4.5"] };
+  await assert.rejects(
+    planInstall(ctx(root, env, [{ type: "blender", source: "ext.zip" }])),
+    /Blender 5\.0 and later; this PC has only Blender 4\.2, 4\.5/,
+  );
+});
+
+test("blender: an upgrade removes the copy in a Blender that is gone without running it", async () => {
+  const root = await makeTmp();
+  await writeFile(join(root, "ext.zip"), blenderExtensionZip("my_ext"));
+  // Blender 5.1 is still there; 5.2 was uninstalled after zeploy installed into it.
+  const env = blenderEnv(root, ["5.1"]);
+  await mkdir(join(root, "Blender 5.1"), { recursive: true });
+  await writeFile(join(root, "Blender 5.1", "blender.exe"), "");
+  const gone = join(root, "Blender 5.2", "blender.exe");
+  const previous: Receipt = {
+    id: "pkg",
+    name: "Pkg",
+    version: "1.0.0",
+    installedAt: "2026-01-01T00:00:00.000Z",
+    apps: ["blender"],
+    items: [
+      { kind: "blender-extension", exe: join(root, "Blender 5.1", "blender.exe"), version: "5.1", id: "my_ext" },
+      { kind: "blender-extension", exe: gone, version: "5.2", id: "my_ext" },
+    ],
+  };
+  const plan = await planInstall(ctx(root, env, [{ type: "blender", source: "ext.zip" }]), previous);
+  assert.ok(!plan.actions.some((a) => a.kind === "exec" && a.file === gone));
+  assert.deepEqual(
+    plan.actions.filter((a) => a.kind === "removePath").map((a) => a.kind === "removePath" && a.path),
+    [join(env.paths.appData, "Blender Foundation", "Blender", "5.2", "extensions", "user_default", "my_ext")],
+  );
+  assert.match(plan.warnings.join("\n"), /Blender 5\.2 is no longer at/);
+});
+
+test("blender: uninstall from a Blender that is gone deletes the add-on files; one still there runs Blender", async () => {
+  const root = await makeTmp();
+  const env = blenderEnv(root, ["5.1"]);
+  await mkdir(join(root, "Blender 5.1"), { recursive: true });
+  await writeFile(join(root, "Blender 5.1", "blender.exe"), "");
+  const { planUninstall } = await import("../src/index.ts");
+  const plan = await planUninstall(
+    {
+      id: "pkg",
+      name: "Pkg",
+      version: "1.0.0",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      apps: ["blender"],
+      items: [
+        { kind: "blender-addon", exe: join(root, "Blender 5.1", "blender.exe"), version: "5.1", module: "my_addon" },
+        { kind: "blender-addon", exe: join(root, "Blender 5.2", "blender.exe"), version: "5.2", module: "my_addon" },
+      ],
+    },
+    env,
+  );
+  const addons = join(env.paths.appData, "Blender Foundation", "Blender", "5.2", "scripts", "addons");
+  assert.deepEqual(
+    plan.actions.map((a) => (a.kind === "removePath" ? a.path : a.kind === "exec" ? a.file : a.kind)),
+    ["ensureNotRunning", join(root, "Blender 5.1", "blender.exe"), join(addons, "my_addon"), join(addons, "my_addon.py")],
+  );
+});
+
 test("upgrade removes what the previous version installed and the new one does not", async () => {
   const { pkgRoot, env } = await cepFixture();
   const previous: Receipt = {

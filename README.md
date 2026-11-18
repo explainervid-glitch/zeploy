@@ -375,7 +375,7 @@ components point at, so the package folder can be the plugin's working folder.
 | `ai-script` | `.jsx`/`.jsxbin` file or folder | `Presets\<language>\Scripts` in every Illustrator install, where it shows under File > Scripts. Needs an elevated agent (0.6.0 or later) |
 | `jsfl` | `.jsfl` file or folder | `%LOCALAPPDATA%\Adobe\Animate <version>\<language>\Configuration\<folder>` |
 | `zxp` | signed `.zxp` or `.ccx` | through Adobe's UnifiedPluginInstallerAgent |
-| `blender` | extension `.zip`, legacy add-on `.zip`, or single-file `.py` | every compatible Blender version, installed and enabled by Blender itself. Each version installs on its own: if one fails, the others stay installed and the install counts as partly done |
+| `blender` | extension `.zip`, legacy add-on `.zip`, or single-file `.py` | every compatible Blender version from 5.0 on (agent 0.10.0; older Blender is ignored), installed and enabled by Blender itself. Each version installs on its own: if one fails, the others stay installed and the install counts as partly done |
 
 Optional fields:
 
@@ -391,7 +391,7 @@ Optional fields:
 - `zxp`: `extensionName` is required; zeploy needs it to remove the extension.
 - `blender`: `kind` (`extension` or `addon`) and `module` are read from the zip
   when absent. `minBlender` and `maxBlender` limit the Blender versions, such
-  as `"4.2"`. An extension's own `blender_version_min` and
+  as `"5.1"`. zeploy never installs into Blender older than 5.0. An extension's own `blender_version_min` and
   `blender_version_max` are respected too.
 
 ### Examples
@@ -414,14 +414,14 @@ An Animate command:
 { "type": "jsfl", "source": "jsfl/DelayerZ.jsfl", "folder": "Commands" }
 ```
 
-A Blender extension, and a legacy add-on limited to Blender 4.2 to 4.5:
+A Blender extension, and a legacy add-on limited to Blender 5.0 to 5.1:
 
 ```json
 { "type": "blender", "source": "figblend-addon-0.2.0.zip" }
 ```
 
 ```json
-{ "type": "blender", "source": "Remaper.zip", "minBlender": "4.2", "maxBlender": "4.5" }
+{ "type": "blender", "source": "Remaper.zip", "minBlender": "5.0", "maxBlender": "5.1" }
 ```
 
 One package can combine several components, for example a CEP panel and the
@@ -801,6 +801,8 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | `no matching After Effects install ...` | That PC has no After Effects version the package allows |
 | `no Animate Configuration folder ...; open Animate once so it creates one` | Start Animate once on that PC, then install again |
 | `no compatible Blender for ...` | That PC has no Blender version inside the package's range |
+| `zeploy installs into Blender 5.0 and later; this PC has only Blender ...` | Install Blender 5.0 or later on that PC, then install again |
+| `spawn ...\blender.exe ENOENT` | A Blender version zeploy installed into was uninstalled or moved. Update that PC to agent 0.10.0, which deletes the add-on from that version's user folder instead of running it, then install again |
 | `agent disconnected during the job` | The PC went offline mid-job. Check the PC, then install again |
 | `admin server restarted during the job` | The admin app closed mid-job. Install again |
 
@@ -1031,7 +1033,9 @@ Done:
   plugins found on PCs without zeploy, and updating a package from its
   folder (0.4.0); partial Blender installs (0.5.0); Illustrator (0.6.0);
   several admin computers (0.7.0); plugin usage (0.8.0); idle and error
-  PC status with the waker, Wake up and Show log (0.9.0).
+  PC status with the waker, Wake up and Show log (0.9.0); Blender 5.0 and
+  later only, and a Blender that was uninstalled no longer blocks updates
+  and uninstalls (0.10.0).
 
 Planned for phase 3:
 

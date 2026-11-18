@@ -46,7 +46,10 @@ export interface Environment {
   paths: WindowsPaths;
   isAdmin: boolean;
   adobe: AdobeInstall[];
+  // Blender MIN_BLENDER and later; older versions found are only named in
+  // blenderTooOld, and nothing is installed into them.
   blender: BlenderInstall[];
+  blenderTooOld?: string[];
   animateConfigs: AnimateConfig[];
   // Adobe's UnifiedPluginInstallerAgent.exe, when Creative Cloud is installed.
   upia: string | null;
@@ -116,7 +119,7 @@ export async function detectEnvironment(options: DetectOptions = {}): Promise<En
     ...(process.env["ZEPLOY_BLENDER"] ?? "").split(";").filter(Boolean),
   ];
 
-  const [isAdmin, adobe, blender, animateConfigs, upia] = await Promise.all([
+  const [isAdmin, adobe, blenders, animateConfigs, upia] = await Promise.all([
     options.isAdmin ?? isElevated(),
     findAdobeInstalls(paths),
     findBlenderInstalls(paths, extraBlender),
@@ -134,7 +137,8 @@ export async function detectEnvironment(options: DetectOptions = {}): Promise<En
     paths,
     isAdmin,
     adobe,
-    blender,
+    blender: blenders.filter((b) => compareVersions(b.version, MIN_BLENDER) >= 0),
+    blenderTooOld: blenders.filter((b) => compareVersions(b.version, MIN_BLENDER) < 0).map((b) => b.version),
     animateConfigs,
     upia,
     cep: {
@@ -182,6 +186,9 @@ async function blenderAt(exe: string): Promise<BlenderInstall | null> {
   const version = versions.at(-1);
   return version ? { version, dir, exe } : null;
 }
+
+// The oldest Blender zeploy installs into, finds plugins in and reports.
+export const MIN_BLENDER = "5.0";
 
 async function findBlenderInstalls(paths: WindowsPaths, extra: string[]): Promise<BlenderInstall[]> {
   const candidates: string[] = [];

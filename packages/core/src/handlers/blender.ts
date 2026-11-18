@@ -21,7 +21,7 @@ import {
   type PlanContext,
   type ReceiptItem,
 } from "../actions.ts";
-import { APP_PROCESSES, compareVersions, type BlenderInstall, type Environment } from "../env.ts";
+import { APP_PROCESSES, compareVersions, MIN_BLENDER, type BlenderInstall, type Environment } from "../env.ts";
 import { linkTarget } from "../fsutil.ts";
 import type { BlenderComponent } from "../manifest.ts";
 
@@ -210,6 +210,10 @@ export async function planBlender(c: BlenderComponent, ctx: PlanContext): Promis
   const skipped = wanted.filter((b) => !fits(b));
 
   if (targets.length === 0) {
+    const tooOld = env.blenderTooOld ?? [];
+    if (env.blender.length === 0 && tooOld.length) {
+      throw new PlanError(`zeploy installs into Blender ${MIN_BLENDER} and later; this PC has only Blender ${tooOld.join(", ")}`);
+    }
     const found = env.blender.map((b) => b.version).join(", ") || "none";
     throw new PlanError(`no compatible Blender for ${basename(source)} (needs ${min ?? "any"}+, installed: ${found})`);
   }
@@ -279,15 +283,29 @@ export async function blenderRemove(
   item: Extract<ReceiptItem, { kind: "blender-extension" | "blender-addon" }>,
   env: Environment,
 ): Promise<{ actions: Action[]; warnings: string[] }> {
+  const install = { version: item.version, dir: dirname(item.exe), exe: item.exe };
+  const kind = item.kind === "blender-extension" ? "extension" : "addon";
+  const name = item.kind === "blender-extension" ? item.id : item.module;
   if (item.kind === "blender-extension") {
     // Blender deletes the extension folder itself, through rmtree; see the
     // note at the top about junctions.
-    const install = { version: item.version, dir: dirname(item.exe), exe: item.exe };
     const [path] = await installPaths(install, env, "extension", item.id);
     const target = path ? await linkTarget(path) : null;
     if (path && target) {
       return { actions: [], warnings: [`left developer link in place: ${path} -> ${target}`] };
     }
+  }
+  if (!(await stat(item.exe).catch(() => null))) {
+    // That Blender was uninstalled or moved, so it cannot remove the add-on.
+    // Its files are deleted from that version's user folder instead
+    // (removePath only unlinks a developer link, never what it points at).
+    const reason = `Blender ${item.version} is no longer at ${item.exe}`;
+    return {
+      actions: (await installPaths(install, env, kind, name)).map((path) => ({ kind: "removePath" as const, path, reason })),
+      warnings: [`${reason}; removed ${name} from its user folder without running it`],
+    };
+  }
+  if (item.kind === "blender-extension") {
     return {
       actions: [
         {

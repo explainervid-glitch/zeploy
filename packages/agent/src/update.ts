@@ -14,7 +14,7 @@
 
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { copyFile, rename, rm } from "node:fs/promises";
+import { copyFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { run } from "../../core/src/index.ts";
@@ -29,6 +29,34 @@ export const NEXT_EXE = "zeploy-agent.new.exe";
 export const OLD_EXE = "zeploy-agent.old.exe";
 
 const TAKEOVER_MS = 60_000;
+
+// Old exes moved aside because something still ran them, see clearOldExe.
+const ASIDE_EXE = /^zeploy-agent\.old-\d+\.exe$/i;
+
+// Clears the way for the running exe to become zeploy-agent.old.exe. One left
+// by the previous update is deleted, or, while something still runs it (an
+// agent that has not exited yet, or a waker started from it), renamed: Windows
+// will not delete a running exe, but it will rename one.
+export async function clearOldExe(old: string, log: (line: string) => void): Promise<void> {
+  try {
+    await rm(old, { force: true });
+  } catch (err) {
+    const aside = join(dirname(old), `zeploy-agent.old-${Date.now()}.exe`);
+    await rename(old, aside);
+    log(`${old} is still in use (${(err as NodeJS.ErrnoException).code ?? (err as Error).message}); moved it to ${aside}`);
+  }
+}
+
+// Deletes what earlier updates left in the agent's folder. Files still in use
+// stay until a later start.
+export async function removeUpdateFiles(dir: string): Promise<void> {
+  const names = await readdir(dir).catch(() => [] as string[]);
+  for (const name of names) {
+    if (name === OLD_EXE || name === NEXT_EXE || ASIDE_EXE.test(name)) {
+      await rm(join(dir, name), { force: true }).catch(() => {});
+    }
+  }
+}
 
 function pidIn(file: string): number | null {
   try {
@@ -98,7 +126,7 @@ export function exeUpdater(options: { exe: string; pidFile: string; takeoverMs?:
       }
 
       // Left by the previous update if its agent could not delete it.
-      await rm(old, { force: true });
+      await clearOldExe(old, log);
       await rename(exe, old);
       try {
         await rename(next, exe);

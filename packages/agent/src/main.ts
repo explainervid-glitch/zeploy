@@ -33,7 +33,7 @@ import {
   TASK_NAME,
   WAKER_TASK_NAME,
 } from "./task.ts";
-import { exeUpdater, isAlive, NEXT_EXE, OLD_EXE } from "./update.ts";
+import { exeUpdater, isAlive, removeUpdateFiles } from "./update.ts";
 import { AGENT_VERSION } from "./version.ts";
 import { CRASH_FILE, LOG_FILE, localWakerVersion, PID_FILE, startWaker } from "./waker.ts";
 
@@ -126,8 +126,7 @@ async function checkServer(serverUrl: string): Promise<void> {
 // .new.exe is left only by an update that crashed half-way.
 async function removeUpdateLeftovers(oldPid: number | null): Promise<void> {
   for (let i = 0; oldPid && isAlive(oldPid) && i < 240; i++) await sleep(500);
-  const dir = dirname(process.execPath);
-  for (const name of [OLD_EXE, NEXT_EXE]) await rm(join(dir, name), { force: true }).catch(() => {});
+  await removeUpdateFiles(dirname(process.execPath));
 }
 
 async function cmdRun(values: { server?: string; token?: string; takeover?: string }): Promise<void> {

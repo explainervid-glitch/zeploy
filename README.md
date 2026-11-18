@@ -802,6 +802,7 @@ the full log. Nothing on the PC changes when a job fails before installing.
 | `no Animate Configuration folder ...; open Animate once so it creates one` | Start Animate once on that PC, then install again |
 | `no compatible Blender for ...` | That PC has no Blender version inside the package's range |
 | `zeploy installs into Blender 5.0 and later; this PC has only Blender ...` | Install Blender 5.0 or later on that PC, then install again |
+| `EPERM: operation not permitted, unlink ...\zeploy-agent.old.exe` | An agent update before 0.11.1 found the exe left by the previous update still running (an old agent or waker that had not stopped). Restart that PC once, then update its agent; from 0.11.1 on, such a file is moved aside instead |
 | `spawn ...\blender.exe ENOENT` | A Blender version zeploy installed into was uninstalled or moved. Update that PC to agent 0.10.1, which deletes the add-on from that version's user folder instead of running it, then install again |
 | `agent disconnected during the job` | The PC went offline mid-job. Check the PC, then install again |
 | `admin server restarted during the job` | The admin app closed mid-job. Install again |
@@ -1036,7 +1037,8 @@ Done:
   PC status with the waker, Wake up and Show log (0.9.0); Blender 5.0 and
   later only (0.10.0); a Blender that was uninstalled no longer blocks
   updates and uninstalls (0.10.1); the Apps button shows which apps
-  are open on a PC (0.11.0).
+  are open on a PC (0.11.0); an old exe still running no longer
+  blocks agent updates (0.11.1).
 
 Planned for phase 3:
 

@@ -493,7 +493,7 @@ plugin's own manifest, in `zeploy.json`, or in the dialog) and add it again.
 
 ### Read the table
 
-There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app. Drag the right edge of the **PC \ PACKAGE** header to make the PC column wider or narrower, so long names, the status and the row buttons fit (double-click it to reset; the width is remembered in this browser).
+There is one row per PC and one column per package (its latest version). Columns are grouped by the app the package installs into: AE, Premiere, Illustrator, Animate, Blender, then panels that load in several apps (such as "AE + Premiere") after their first app. Drag the right edge of the **PC \ PACKAGE** header to make the PC column wider or narrower, so long names, the status and the row buttons fit (double-click it to reset; the width is remembered in this browser). Hover a PC and click **Apps** to see which of After Effects, Premiere Pro, Illustrator, Animate and Blender are open on it right now, for example before installing (agent 0.11.0).
 
 | Mark | Means |
 | --- | --- |
@@ -1035,7 +1035,8 @@ Done:
   several admin computers (0.7.0); plugin usage (0.8.0); idle and error
   PC status with the waker, Wake up and Show log (0.9.0); Blender 5.0 and
   later only (0.10.0); a Blender that was uninstalled no longer blocks
-  updates and uninstalls (0.10.1).
+  updates and uninstalls (0.10.1); the Apps button shows which apps
+  are open on a PC (0.11.0).
 
 Planned for phase 3:
 

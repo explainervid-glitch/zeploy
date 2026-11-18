@@ -50,7 +50,11 @@ async function writePackage(dir: string, version: string, marker: string) {
   await write(join(dir, "panel", "marker.txt"), marker);
 }
 
-function launchAgent(token: string, onStatus?: (s: AgentStatus) => void): RunningAgent {
+function launchAgent(
+  token: string,
+  onStatus?: (s: AgentStatus) => void,
+  processes: () => Promise<Set<string>> = noProcesses,
+): RunningAgent {
   const env = fakeEnv(join(root, "pc"));
   const agent = startAgent({
     serverUrl: `http://127.0.0.1:${server.port}`,
@@ -58,7 +62,7 @@ function launchAgent(token: string, onStatus?: (s: AgentStatus) => void): Runnin
     agentId: "agent-test-0001",
     info: { hostname: "TEST-PC", user: "tester" },
     detect: async () => env,
-    exec: { processes: noProcesses },
+    exec: { processes },
     log: () => {},
     onStatus,
   });
@@ -222,6 +226,36 @@ test("a PC keeps the role the admin gave it; the same role in other case is one 
   const cleared = await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "", role: "" });
   assert.equal(cleared.body.role, undefined);
   assert.equal((await api("POST", "/api/agents/rename", { id: "agent-test-0001", label: "", role: "x".repeat(41) })).status, 400);
+});
+
+test("the admin asks a PC which apps are open", async () => {
+  for (const a of agents.splice(0)) await a.stop();
+  await agentOnline(false);
+  const off = await api("POST", "/api/agents/open-apps", { id: "agent-test-0001" });
+  assert.equal(off.status, 409);
+  assert.match(off.body.error, /offline/);
+
+  // tasklist names, as listProcesses gives them: lower case, other programs too.
+  launchAgent(server.store.data.enrollToken, undefined, async () => new Set(["blender.exe", "afterfx.exe", "chrome.exe"]));
+  await agentOnline(true);
+  const open = await api("POST", "/api/agents/open-apps", { id: "agent-test-0001" });
+  assert.equal(open.status, 200, JSON.stringify(open.body));
+  assert.deepEqual(open.body.apps, ["aftereffects", "blender"]);
+
+  for (const a of agents.splice(0)) await a.stop();
+  await agentOnline(false);
+  launchAgent(server.store.data.enrollToken, undefined, async () => {
+    throw new Error("tasklist failed");
+  });
+  await agentOnline(true);
+  const failed = await api("POST", "/api/agents/open-apps", { id: "agent-test-0001" });
+  assert.equal(failed.status, 502);
+  assert.match(failed.body.error, /tasklist failed/);
+
+  for (const a of agents.splice(0)) await a.stop();
+  await agentOnline(false);
+  launchAgent(server.store.data.enrollToken);
+  await agentOnline(true);
 });
 
 test("the admin API saves a one-click installer with this server's team token", async () => {

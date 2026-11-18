@@ -10,8 +10,10 @@ import { dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
+  APP_PROCESSES,
   detectEnvironment,
   installPackage,
+  listProcesses,
   listReceipts,
   scanInstalled,
   uninstallPackage,
@@ -85,6 +87,7 @@ export function startAgent(options: AgentOptions): RunningAgent {
       ...(options.onAdmins ? [P.FEATURE_ADMINS] : []),
       ...(options.onUsageAck ? [P.FEATURE_USAGE] : []),
       ...(options.waker ? [P.FEATURE_WAKER] : []),
+      P.FEATURE_OPEN_APPS,
     ],
     ...options.info,
   };
@@ -249,6 +252,19 @@ export function startAgent(options: AgentOptions): RunningAgent {
     await sendState();
   }
 
+  // Answered at once, also while a job runs.
+  async function sendOpenApps(id: string): Promise<void> {
+    try {
+      const running = await (options.exec?.processes ?? listProcesses)();
+      const apps = Object.entries(APP_PROCESSES)
+        .filter(([, exe]) => running.has(exe.toLowerCase()))
+        .map(([app]) => app);
+      send({ type: "openApps", id, apps });
+    } catch (err) {
+      send({ type: "openApps", id, apps: [], error: (err as Error).message.slice(0, 500) });
+    }
+  }
+
   function handle(message: P.ServerMessage): void {
     switch (message.type) {
       case "ping":
@@ -269,6 +285,9 @@ export function startAgent(options: AgentOptions): RunningAgent {
         return;
       case "usageAck":
         options.onUsageAck?.(message.id);
+        return;
+      case "openApps":
+        void sendOpenApps(message.id);
         return;
     }
   }

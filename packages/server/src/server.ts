@@ -154,6 +154,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const usageSeen = new Map<string, string[]>();
   const adminToken = P.randomToken();
   const conns = new Map<string, Conn>();
+  // Open-apps questions waiting for their agent's answer, by request id.
+  const openAppsWaiting = new Map<string, { agentId: string; done: (msg: { apps: string[]; error?: string }) => void }>();
   const downloads = new Map<string, { token: string; file: string; type: string }>();
   const sseClients = new Set<ServerResponse>();
   // Agent updates waiting for the new agent to connect, by job id.
@@ -498,6 +500,11 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         if (usageOn() && !seen.includes(msg.id)) usage.add(conn.agentId, msg.rows);
         usageSeen.set(conn.agentId, [...seen, msg.id].slice(-20));
         conn.ws.send(conn.channel.seal({ type: "usageAck", id: msg.id } satisfies P.ServerMessage));
+        return;
+      }
+      case "openApps": {
+        const waiting = openAppsWaiting.get(msg.id);
+        if (waiting?.agentId === conn.agentId) waiting.done(msg);
         return;
       }
       case "jobStarted":
@@ -891,6 +898,32 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         log(`wake ${agent?.hostname ?? id}: ${result.message}`);
         if (agent) void checkWaker(agent);
         return json(res, 200, result);
+      }
+      case "POST /api/agents/open-apps": {
+        const { id } = z.object({ id: z.string() }).parse(await readJson(req));
+        const agent = store.data.agents[id];
+        if (!agent) throw new HttpError(404, "no such PC");
+        const name = agent.label ?? agent.hostname;
+        const conn = conns.get(id);
+        if (!conn) throw new HttpError(409, `${name} is offline`);
+        if (!agent.features?.includes(P.FEATURE_OPEN_APPS)) {
+          throw new HttpError(409, `${name} has agent ${agent.agentVersion}, which cannot say which apps are open; update its agent first`);
+        }
+        const reqId = P.randomToken();
+        const answer = await new Promise<{ apps: string[]; error?: string } | null>((done) => {
+          const timer = setTimeout(() => done(null), 10_000);
+          openAppsWaiting.set(reqId, {
+            agentId: id,
+            done: (msg) => {
+              clearTimeout(timer);
+              done(msg);
+            },
+          });
+          conn.ws.send(conn.channel.seal({ type: "openApps", id: reqId } satisfies P.ServerMessage));
+        }).finally(() => openAppsWaiting.delete(reqId));
+        if (!answer) throw new HttpError(504, `${name} did not answer`);
+        if (answer.error) throw new HttpError(502, `${name} could not list its apps: ${answer.error}`);
+        return json(res, 200, { apps: answer.apps });
       }
       case "POST /api/agents/log": {
         const { id } = z.object({ id: z.string() }).parse(await readJson(req));

@@ -51,6 +51,8 @@ export const FEATURE_ADMINS = "admins";
 export const FEATURE_USAGE = "usage";
 // Comes with the waker (see "waker" below), and reports problems (0.9.0).
 export const FEATURE_WAKER = "waker";
+// Answers "openApps" with the apps zeploy installs into that are running (0.11.0).
+export const FEATURE_OPEN_APPS = "open-apps";
 
 export const agentInfoSchema = z.object({
   hostname: z.string().max(256),
@@ -192,6 +194,9 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("settings"), usage: z.boolean() }),
   // The usage batch with this id is stored; the agent may delete it.
   z.object({ type: z.literal("usageAck"), id: z.string().max(64) }),
+  // Which apps zeploy installs into are open right now; answered with
+  // openApps carrying the same id. Only for agents with FEATURE_OPEN_APPS.
+  z.object({ type: z.literal("openApps"), id: z.string().max(64) }),
 ]);
 
 // Plugin usage, counted on the PC from the lines plugins append to
@@ -272,6 +277,13 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
   // Plugin usage since the last batch; answered with usageAck. From agent 0.8.0.
   z.object({ type: z.literal("usage"), id: z.string().max(64), rows: z.array(usageRowSchema).max(500) }),
   z.object({ type: z.literal("jobLog"), jobId: z.string(), line: z.string().max(4000) }),
+  // App ids ("aftereffects", "blender"), or why the list could not be read. From agent 0.11.0.
+  z.object({
+    type: z.literal("openApps"),
+    id: z.string().max(64),
+    apps: z.array(z.string().max(40)).max(16),
+    error: z.string().max(500).optional(),
+  }),
   z.object({
     type: z.literal("jobDone"),
     jobId: z.string(),

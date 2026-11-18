@@ -24,7 +24,7 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
 // After Effects' layer label colors, one per package.
 const LABELS = ["#E4D84C", "#A9CBC7", "#677DE0", "#E8920D", "#E5BCC9", "#4AA44C", "#A9A9CA", "#3DA2A5", "#F46DD6", "#E7C19E", "#B3C7B3", "#A89677"];
 const APP_SHORT = { aftereffects: "AE", premiere: "Premiere", animate: "Animate" };
-const APP_LABELS = { aftereffects: "After Effects", premiere: "Premiere Pro", animate: "Animate", blender: "Blender" };
+const APP_LABELS = { aftereffects: "After Effects", premiere: "Premiere Pro", illustrator: "Illustrator", animate: "Animate", blender: "Blender" };
 const TYPE_LABELS = { cep: "CEP panel", "ae-script": "AE script", jsfl: "JSFL command", zxp: "ZXP extension", blender: "Blender add-on" };
 const STATUS = { queued: "Queued", sent: "Sent", running: "Running", done: "Done", failed: "Failed" };
 const ACTIVE = new Set(["queued", "sent", "running"]);
@@ -490,11 +490,16 @@ function rowHtml(agent, pkgs) {
     u?.canUpdate && !u.job
       ? `<button type="button" class="link-btn" data-update-agent="${esc(agent.id)}" aria-label="Update the agent on ${esc(nameOf(agent))} to ${esc(u.target)}">Update agent</button>`
       : "";
+  // Which apps are open (agent 0.11.0).
+  const openApps =
+    agent.online && (agent.features ?? []).includes("open-apps")
+      ? `<button type="button" class="link-btn" data-open-apps="${esc(agent.id)}" aria-label="Show which apps are open on ${esc(nameOf(agent))}">Apps</button>`
+      : "";
   return (
     `<tr class="${agent.online ? "" : "offline"}"><th scope="row" class="rowhead">` +
     `<div class="rowhead-in" title="${esc(agentDetails(agent))}">` +
     `${statusDot(agent)}<span class="pc-name">${esc(nameOf(agent))}</span>${statusHtml(agent)}${warn}${agentTagHtml(agent)}` +
-    `<span class="row-actions">${update}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Edit the name and role of ${esc(nameOf(agent))}">Edit</button>${forget}</span>` +
+    `<span class="row-actions">${update}${openApps}<button type="button" class="link-btn" data-rename="${esc(agent.id)}" aria-label="Edit the name and role of ${esc(nameOf(agent))}">Edit</button>${forget}</span>` +
     `</div></th>${pkgs.map((p) => cellHtml(agent, p)).join("")}</tr>`
   );
 }
@@ -2093,6 +2098,24 @@ async function wakeAgent(button, id) {
   }
 }
 
+// Which of the apps zeploy installs into are open on a PC right now.
+async function showOpenApps(button, id) {
+  const agent = state.agents.find((a) => a.id === id);
+  const name = agent ? nameOf(agent) : "PC";
+  button.disabled = true;
+  button.textContent = "Apps…";
+  try {
+    const { apps } = await api("POST", "/api/agents/open-apps", { id });
+    const labels = apps.map((a) => APP_LABELS[a] ?? a);
+    toast(labels.length ? `${name}: ${labels.join(", ")} open` : `${name}: no After Effects, Premiere Pro, Illustrator, Animate or Blender open`);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Apps";
+  }
+}
+
 async function showLog(id) {
   const agent = state.agents.find((a) => a.id === id);
   const dialog = $("log-dialog");
@@ -2143,6 +2166,7 @@ document.addEventListener("click", async (event) => {
     else if (d.updateAgent) await updateAgents([d.updateAgent]);
     else if (d.wake) await wakeAgent(el, d.wake);
     else if (d.showLog) await showLog(d.showLog);
+    else if (d.openApps) await showOpenApps(el, d.openApps);
     else if (d.copyLog !== undefined) await copy($("log-text").textContent, "Log copied");
     else if (d.removeAdmin) await removeAdmin(d.removeAdmin);
     else if (d.chartType) {

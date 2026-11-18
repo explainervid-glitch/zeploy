@@ -10,5 +10,5 @@ export * from "./receipts.ts";
 export * from "./scan.ts";
 export { readCepManifest, CSXS_VERSIONS } from "./handlers/cep.ts";
 export { inspectBlenderSource } from "./handlers/blender.ts";
-export { isElevated, run } from "./win.ts";
+export { isElevated, listProcesses, run } from "./win.ts";
 export { migrateLegacyDir } from "./fsutil.ts";
